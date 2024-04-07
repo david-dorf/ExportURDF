@@ -1,0 +1,10 @@
+{
+	"autodeskProduct":	"Fusion",
+	"type":	"script",
+	"author":	"daviddorf2023",
+	"description":	{
+		"":	"Export URDF from assembly."
+	},
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true
+}
