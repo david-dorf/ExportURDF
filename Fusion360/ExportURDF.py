@@ -184,8 +184,6 @@ def fillJointTemplate(joint, jointType):
     elif jointTypeStr == 'revolute':
         joint_axis = joint.jointMotion.rotationAxisVector
         joint_limits = joint.jointMotion.rotationLimits
-        joint_min = min(joint_limits)
-        joint_max = max(joint_limits)
         return jointTemplate % (joint.name,
                                 joint_origin.origin.x,
                                 joint_origin.origin.y,
@@ -198,8 +196,8 @@ def fillJointTemplate(joint, jointType):
                                 joint_axis.x,
                                 joint_axis.y,
                                 joint_axis.z,
-                                joint_min,
-                                joint_max)
+                                joint_limits.minimumValue,
+                                joint_limits.maximumValue)
     elif jointTypeStr == 'prismatic':
         return jointTemplate % (joint.name,
                                 joint_origin.origin.x,
@@ -212,6 +210,8 @@ def fillJointTemplate(joint, jointType):
                                 joint.occurrenceTwo.name,
                                 joint_axis.x,
                                 joint_axis.y,
-                                joint_axis.z)
+                                joint_axis.z,
+                                joint_limits.minimumValue,
+                                joint_limits.maximumValue)
     else:
         raise ValueError('Invalid joint type')
