@@ -10,12 +10,23 @@ def run(context):
     robotHeader = """<robot name = "%s">\n"""
     linkTemplate = """
     <link name = "%s">
-        <visual >
+        <visual>
             <origin xyz = "%f %f %f" rpy = "0 0 0"/>
             <geometry>
                 <mesh filename = "%s" scale = "0.001 0.001 0.001"/>
             </geometry>
         </visual>
+        <collision>
+            <origin xyz = "%f %f %f" rpy = "0 0 0"/>
+            <geometry>
+                <mesh filename = "%s" scale = "0.001 0.001 0.001"/>
+            </geometry>
+        </collision>
+        <inertial>
+            <origin xyz = "%f %f %f" rpy = "0 0 0"/>
+            <mass value = "%f"/>
+            <inertia ixx = "%f" ixy = "%f" ixz = "%f" iyy = "%f" iyz = "%f" izz = "%f"/>
+        </inertial>
     </link>
     """
     jointTemplate = """
@@ -61,14 +72,31 @@ def run(context):
         urdfFile.write(xmlHeader)
         urdfFile.write(robotHeader % robotName)
         for link in rootComp.occurrences:
-            link_origin = link.getPhysicalProperties().centerOfMass
+            physProp = link.getPhysicalProperties()
+            link_origin = physProp.centerOfMass
+            returnValue, xx, yy, zz, xy, yz, xz = physProp.getXYZMomentsOfInertia()
+            kgcm2_to_kgm2 = 1e-6
             parsed_name = link.name.replace(' ', '_').replace(':', '_')
             mesh_name = os.path.join('meshes', parsed_name + '.stl')
             urdfFile.write(linkTemplate % (parsed_name,
                                            link_origin.x,
                                            link_origin.y,
                                            link_origin.z,
-                                           mesh_name))
+                                           mesh_name,
+                                           link_origin.x,
+                                           link_origin.y,
+                                           link_origin.z,
+                                           mesh_name,
+                                           link_origin.x,
+                                           link_origin.y,
+                                           link_origin.z,
+                                           physProp.mass,
+                                           xx * kgcm2_to_kgm2,
+                                           xy * kgcm2_to_kgm2,
+                                           xz * kgcm2_to_kgm2,
+                                           yy * kgcm2_to_kgm2,
+                                           yz * kgcm2_to_kgm2,
+                                           zz * kgcm2_to_kgm2,))
             meshPath = os.path.join(folderPath, robotName, mesh_name)
             stlExportOptions = exporter.createSTLExportOptions(
                 link.component, meshPath)
