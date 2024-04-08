@@ -43,7 +43,7 @@ def run(context):
         urdfFile.write(xmlHeader)
         urdfFile.write(robotHeader % robotName)
         for link in rootComp.occurrences:
-            urdfFile.write(fillLinkTemplate(link))
+            urdfFile.write(fillLinkTemplate(link, robotName))
             parsed_name = link.name.replace(' ', '_').replace(':', '_')
             mesh_name = os.path.join('meshes', parsed_name + '.stl')
             meshPath = os.path.join(folderPath, robotName, mesh_name)
@@ -70,13 +70,13 @@ def getTemplate(templateName):
         <visual>
             <origin xyz = "%f %f %f" rpy = "0 0 0"/>
             <geometry>
-                <mesh filename = "%s" scale = "0.001 0.001 0.001"/>
+                <mesh filename = "file://$(find %s)/%s" scale = "0.001 0.001 0.001"/>
             </geometry>
         </visual>
         <collision>
             <origin xyz = "%f %f %f" rpy = "0 0 0"/>
             <geometry>
-                <mesh filename = "%s" scale = "0.001 0.001 0.001"/>
+                <mesh filename = "file://$(find %s)/%s" scale = "0.001 0.001 0.001"/>
             </geometry>
         </collision>
         <inertial>
@@ -122,7 +122,7 @@ def getTemplate(templateName):
     return locals()[templateName.upper()]
 
 
-def fillLinkTemplate(link):
+def fillLinkTemplate(link, robotName):
     link_origin = link.getPhysicalProperties().centerOfMass
     returnValue, xx, yy, zz, xy, yz, xz = link.getPhysicalProperties().getXYZMomentsOfInertia()
     kgcm2_to_kgm2 = 1e-6
@@ -133,10 +133,12 @@ def fillLinkTemplate(link):
                            link_origin.x,
                            link_origin.y,
                            link_origin.z,
+                           robotName,
                            mesh_name,
                            link_origin.x,
                            link_origin.y,
                            link_origin.z,
+                           robotName,
                            mesh_name,
                            link_origin.x,
                            link_origin.y,
@@ -151,8 +153,7 @@ def fillLinkTemplate(link):
 
 
 def fillJointTemplate(joint, jointType):
-    jointDict = {0: 'continuous', 1: 'fixed',
-                 2: 'revolute', 3: 'prismatic'}
+    jointDict = {0: 'fixed', 1: 'revolute', 2: 'prismatic', 3: 'continuous'}
     jointTypeStr = jointDict[jointType]
     jointTemplate = getTemplate(jointTypeStr)
     joint_origin = joint.geometryOrOriginOne
