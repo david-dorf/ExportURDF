@@ -20,7 +20,7 @@ def run(context):
         if not rootComp.occurrences:
             ui.messageBox('No components found. Exiting...')
             return
-        if not rootComp.joints:
+        if not rootComp.joints or not rootComp.asBuiltJoints:
             ui.messageBox('No joints found. Exiting...')
             return
         if not any('base_link' in link.name for link in rootComp.occurrences):
@@ -40,7 +40,8 @@ def run(context):
             os.mkdir(os.path.join(folderPath, robotName, 'meshes'))
         except:
             returnValue, cancelled = ui.inputBox(
-                'Folder already exists. Do you want to overwrite? Enter Y or N', 'Warning', 'N')
+                'Folder already exists. Do you want to overwrite it? This can lead to unstable \
+                 behavior. Enter Y or N', 'Warning', 'N')
             if returnValue.upper() == 'Y':
                 pass
             elif returnValue.upper() == 'N' or cancelled:
@@ -56,6 +57,7 @@ def run(context):
         urdfFile.write(robotHeader % robotName)
 
         # Write links and export meshes
+        # TODO: Add support for rigid groups
         for link in rootComp.occurrences:
             urdfFile.write(fillLinkTemplate(link, robotName))
             parsed_name = formatName(link.name)
@@ -69,14 +71,28 @@ def run(context):
             exporter.execute(stlExportOptions)
 
         # Write joints
-        hasRotationLimits = joint.jointMotion.jointType == 1 and (
-            joint.jointMotion.rotationLimits.isMinimumValueEnabled or
-            joint.jointMotion.rotationLimits.isMaximumValueEnabled)
+        # 0: Fixed, 1: Revolute, 2: Prismatic, 3: Continuous
         for joint in rootComp.joints:
-            if not hasRotationLimits:
-                joint.jointMotion.jointType = 3
-            urdfFile.write(fillJointTemplate(
-                joint, joint.jointMotion.jointType))
+            hasRotationLimits = joint.jointMotion.jointType == 1 and (
+                joint.jointMotion.rotationLimits.isMinimumValueEnabled or
+                joint.jointMotion.rotationLimits.isMaximumValueEnabled)
+            if not hasRotationLimits and joint.jointMotion.jointType == 1:
+                urdfFile.write(fillJointTemplate(
+                    joint, 3, False))
+            else:
+                urdfFile.write(fillJointTemplate(
+                    joint, joint.jointMotion.jointType, False))
+
+        for joint in rootComp.asBuiltJoints:
+            hasRotationLimits = joint.jointMotion.jointType == 1 and (
+                joint.jointMotion.rotationLimits.isMinimumValueEnabled or
+                joint.jointMotion.rotationLimits.isMaximumValueEnabled)
+            if not hasRotationLimits and joint.jointMotion.jointType == 1:
+                urdfFile.write(fillJointTemplate(
+                    joint, 3, True))
+            else:
+                urdfFile.write(fillJointTemplate(
+                    joint, joint.jointMotion.jointType, True))
 
         # Write footer
         urdfFile.write(robotFooter)
@@ -90,7 +106,8 @@ def run(context):
 def formatName(name: str) -> str:
     if 'base_link' in name:
         return 'base_link'
-    return name.replace(' ', '_').replace(':', '_').replace('(', '').replace(')', '')
+    else:
+        return name.replace(' ', '_').replace(':', '_').replace('(', '').replace(')', '')
 
 
 def getTemplate(templateName: str) -> str:
@@ -153,10 +170,12 @@ def getTemplate(templateName: str) -> str:
 
 def fillLinkTemplate(link: adsk.fusion.Occurrence, robotName: str) -> str:
     link_origin = link.getPhysicalProperties().centerOfMass
-    returnValue, xx, yy, zz, xy, yz, xz = link.getPhysicalProperties().getXYZMomentsOfInertia()
+    inertiaSuccess, xx, yy, zz, xy, yz, xz = link.getPhysicalProperties().getXYZMomentsOfInertia()
+    if not inertiaSuccess:
+        raise ValueError('Failed to calculate moments of inertia')
     kgcm2_to_kgm2 = 1e-6
     parsed_name = formatName(link.name)
-    mesh_name = os.path.join('meshes', parsed_name + '.stl')
+    mesh_name = 'meshes/' + parsed_name + '.stl'
     linkTemplate = getTemplate('link')
     return linkTemplate % (parsed_name,
                            link_origin.x,
@@ -181,11 +200,14 @@ def fillLinkTemplate(link: adsk.fusion.Occurrence, robotName: str) -> str:
                            zz * kgcm2_to_kgm2,)
 
 
-def fillJointTemplate(joint: adsk.fusion.Joint, jointType: int) -> str:
+def fillJointTemplate(joint: adsk.fusion.Joint, jointType: int, asBuilt: bool) -> str:
     jointDict = {0: 'fixed', 1: 'revolute', 2: 'prismatic', 3: 'continuous'}
     jointTypeStr = jointDict[jointType]
     jointTemplate = getTemplate(jointTypeStr)
-    joint_origin = joint.geometryOrOriginOne
+    if asBuilt:
+        joint_origin = joint.geometry
+    else:
+        joint_origin = joint.geometryOrOriginOne
     if jointTypeStr == 'continuous':
         joint_axis = joint.jointMotion.rotationAxisVector
         return jointTemplate % (joint.name,
