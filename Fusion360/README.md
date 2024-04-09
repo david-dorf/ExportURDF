@@ -11,6 +11,11 @@ In a Fusion360 environment, you can run the script by following these steps:
 4. Copy the `ExportURDF.py` script content into the script folder.
 5. Run the script by clicking the `Run` button.
 
+## Roadmap
+1. Add support for rigid groups and as-built joints.
+2. Add additional features such as materials integration and SDF tools integration.
+3. Fix any lingering issues with the script.
+
 ## Dependencies
 The script requires the following dependencies:
 Python 3.6+

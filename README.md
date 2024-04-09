@@ -6,6 +6,21 @@ This is a unified URDF converter library for CAD programs, primarily targeting F
 
 Currently, the library supports Fusion360 and OnShape as the two functional CAD programs. However, work is still in progress to add support for SolidWorks and other CAD programs.
 
+## Roadmap
+
+1. Fusion360 support
+2. OnShape support
+3. SolidWorks support
+4. Unit tests
+5. Linting
+6. Tutorials/Docs
+
+Other potential features:
+- Support for other CAD platforms
+- Materials integration
+- SDF tools integration
+- ROS 2 package generator from URDF
+
 ## Getting Started
 
 To get started with the library, follow these steps:
