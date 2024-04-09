@@ -48,10 +48,14 @@ def run(context):
             else:
                 ui.messageBox('Invalid input. Exiting...')
                 return
+
+        # Write URDF file header
         urdfFile = open(os.path.join(
             folderPath, robotName, 'urdf', robotName + '.urdf'), 'w')
         urdfFile.write(xmlHeader)
         urdfFile.write(robotHeader % robotName)
+
+        # Write links and export meshes
         for link in rootComp.occurrences:
             urdfFile.write(fillLinkTemplate(link, robotName))
             parsed_name = formatName(link.name)
@@ -63,9 +67,18 @@ def run(context):
             stlExportOptions.isBinaryFormat = True
             stlExportOptions.meshRefinement = adsk.fusion.MeshRefinementSettings.MeshRefinementLow
             exporter.execute(stlExportOptions)
+
+        # Write joints
+        hasRotationLimits = joint.jointMotion.jointType == 1 and (
+            joint.jointMotion.rotationLimits.isMinimumValueEnabled or
+            joint.jointMotion.rotationLimits.isMaximumValueEnabled)
         for joint in rootComp.joints:
+            if not hasRotationLimits:
+                joint.jointMotion.jointType = 3
             urdfFile.write(fillJointTemplate(
                 joint, joint.jointMotion.jointType))
+
+        # Write footer
         urdfFile.write(robotFooter)
         ui.messageBox('Exported URDF to ' + folderPath)
 
