@@ -12,9 +12,10 @@ In a Fusion360 environment, you can run the script by following these steps:
 5. Run the `FusionURDF` script by clicking the `Run` button.
 
 ## Roadmap
-1. Add support for rigid groups and as-built joints.
-2. Add additional features such as materials integration and SDF tools integration.
-3. Fix any lingering issues with the script.
+1. Write unit tests for the script to ensure code quality and maintainability.
+2. Test the script with various Fusion360 models to identify and fix any issues. 
+   Edge cases like closed chains may not be handled correctly yet.
+3. Add additional features such as materials, rigid groups, and SDF tools integration.
 
 ## Dependencies
 The script requires the following dependencies:
