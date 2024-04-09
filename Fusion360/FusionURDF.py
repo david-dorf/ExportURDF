@@ -206,6 +206,9 @@ def fillJointTemplate(joint: adsk.fusion.Joint, jointType: int, asBuilt: bool) -
     jointTypeStr = jointDict[jointType]
     jointTemplate = getTemplate(jointTypeStr)
     childLink = formatName(joint.occurrenceOne.name)
+    if childLink == 'base_link':
+        raise ValueError(
+            'base_link cannot be a child link. Reverse the selection of the joint.')
     parentLink = formatName(joint.occurrenceTwo.name)
     cm_to_m = 0.01
     if asBuilt:
