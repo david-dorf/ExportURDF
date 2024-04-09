@@ -8,8 +8,8 @@ In a Fusion360 environment, you can run the script by following these steps:
 1. Open the Fusion360 application.
 2. Use `Shift + S` to open the Scripts and Add-ins dialog.
 3. Click the green `+` icon to add a new script.
-4. Copy the `FusionURDF.py` script content into the script folder.
-5. Run the script by clicking the `Run` button.
+4. Copy the `Fusion360` folder into the script folder. [TODO: Create a setup program to do this automatically for users]
+5. Run the `FusionURDF` script by clicking the `Run` button.
 
 ## Roadmap
 1. Add support for rigid groups and as-built joints.
