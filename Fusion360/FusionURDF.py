@@ -17,7 +17,7 @@ def run(context):
         design = adsk.fusion.Design.cast(app.activeProduct)
         exporter = design.exportManager
         rootComp = design.rootComponent
-        robotName = rootComp.name.replace(' ', '_').replace(':', '_')
+        robotName = formatName(rootComp.name)
         folderOpener = ui.createFolderDialog()
         folderOpener.title = 'Select folder to save URDF'
         dialogResult = folderOpener.showDialog()
@@ -44,7 +44,7 @@ def run(context):
         urdfFile.write(robotHeader % robotName)
         for link in rootComp.occurrences:
             urdfFile.write(fillLinkTemplate(link, robotName))
-            parsed_name = link.name.replace(' ', '_').replace(':', '_')
+            parsed_name = formatName(link.name)
             mesh_name = os.path.join('meshes', parsed_name + '.stl')
             meshPath = os.path.join(folderPath, robotName, mesh_name)
             stlExportOptions = exporter.createSTLExportOptions(
@@ -64,7 +64,13 @@ def run(context):
             ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
 
-def getTemplate(templateName) -> str:
+def formatName(name: str) -> str:
+    if 'base_link' in name:
+        return 'base_link'
+    return name.replace(' ', '_').replace(':', '_').replace('(', '').replace(')', '')
+
+
+def getTemplate(templateName: str) -> str:
     LINK = """
     <link name = "%s">
         <visual>
@@ -116,17 +122,17 @@ def getTemplate(templateName) -> str:
         <parent link = "%s"/>
         <child link = "%s"/>
         <axis xyz = "%f %f %f"/>
-        <limit lower = "-0.1" upper = "0.1"/>
+        <limit lower = "%f" upper = "%f"/>
     </joint>
     """
     return locals()[templateName.upper()]
 
 
-def fillLinkTemplate(link, robotName) -> str:
+def fillLinkTemplate(link: adsk.fusion.Occurrence, robotName: str) -> str:
     link_origin = link.getPhysicalProperties().centerOfMass
     returnValue, xx, yy, zz, xy, yz, xz = link.getPhysicalProperties().getXYZMomentsOfInertia()
     kgcm2_to_kgm2 = 1e-6
-    parsed_name = link.name.replace(' ', '_').replace(':', '_')
+    parsed_name = formatName(link.name)
     mesh_name = os.path.join('meshes', parsed_name + '.stl')
     linkTemplate = getTemplate('link')
     return linkTemplate % (parsed_name,
@@ -152,7 +158,7 @@ def fillLinkTemplate(link, robotName) -> str:
                            zz * kgcm2_to_kgm2,)
 
 
-def fillJointTemplate(joint, jointType) -> str:
+def fillJointTemplate(joint: adsk.fusion.Joint, jointType: int) -> str:
     jointDict = {0: 'fixed', 1: 'revolute', 2: 'prismatic', 3: 'continuous'}
     jointTypeStr = jointDict[jointType]
     jointTemplate = getTemplate(jointTypeStr)
@@ -199,6 +205,8 @@ def fillJointTemplate(joint, jointType) -> str:
                                 joint_limits.minimumValue,
                                 joint_limits.maximumValue)
     elif jointTypeStr == 'prismatic':
+        joint_axis = joint.jointMotion.slideDirectionVector
+        joint_limits = joint.jointMotion.slideLimits
         return jointTemplate % (joint.name,
                                 joint_origin.origin.x,
                                 joint_origin.origin.y,
