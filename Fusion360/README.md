@@ -8,7 +8,7 @@ In a Fusion360 environment, you can run the script by following these steps:
 1. Open the Fusion360 application.
 2. Use `Shift + S` to open the Scripts and Add-ins dialog.
 3. Click the green `+` icon to add a new script.
-4. Copy the `ExportURDF.py` script content into the script folder.
+4. Copy the `FusionURDF.py` script content into the script folder.
 5. Run the script by clicking the `Run` button.
 
 ## Roadmap

@@ -64,7 +64,7 @@ def run(context):
             ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
 
-def getTemplate(templateName):
+def getTemplate(templateName) -> str:
     LINK = """
     <link name = "%s">
         <visual>
@@ -122,7 +122,7 @@ def getTemplate(templateName):
     return locals()[templateName.upper()]
 
 
-def fillLinkTemplate(link, robotName):
+def fillLinkTemplate(link, robotName) -> str:
     link_origin = link.getPhysicalProperties().centerOfMass
     returnValue, xx, yy, zz, xy, yz, xz = link.getPhysicalProperties().getXYZMomentsOfInertia()
     kgcm2_to_kgm2 = 1e-6
@@ -152,7 +152,7 @@ def fillLinkTemplate(link, robotName):
                            zz * kgcm2_to_kgm2,)
 
 
-def fillJointTemplate(joint, jointType):
+def fillJointTemplate(joint, jointType) -> str:
     jointDict = {0: 'fixed', 1: 'revolute', 2: 'prismatic', 3: 'continuous'}
     jointTypeStr = jointDict[jointType]
     jointTemplate = getTemplate(jointTypeStr)
