@@ -17,6 +17,16 @@ def run(context):
         design = adsk.fusion.Design.cast(app.activeProduct)
         exporter = design.exportManager
         rootComp = design.rootComponent
+        if not rootComp.occurrences:
+            ui.messageBox('No components found. Exiting...')
+            return
+        if not rootComp.joints:
+            ui.messageBox('No joints found. Exiting...')
+            return
+        if not any('base_link' in link.name for link in rootComp.occurrences):
+            ui.messageBox(
+                'Component named base_link not found. Please add one. Exiting...')
+            return
         robotName = formatName(rootComp.name)
         folderOpener = ui.createFolderDialog()
         folderOpener.title = 'Select folder to save URDF'
