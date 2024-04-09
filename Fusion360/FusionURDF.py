@@ -116,13 +116,13 @@ def getTemplate(templateName: str) -> str:
         <visual>
             <origin xyz = "%f %f %f" rpy = "0 0 0"/>
             <geometry>
-                <mesh filename = "file://$(find %s)/%s" scale = "0.001 0.001 0.001"/>
+                <mesh filename = "package://%s/%s" scale = "0.01 0.01 0.01"/>
             </geometry>
         </visual>
         <collision>
             <origin xyz = "%f %f %f" rpy = "0 0 0"/>
             <geometry>
-                <mesh filename = "file://$(find %s)/%s" scale = "0.001 0.001 0.001"/>
+                <mesh filename = "package://%s/%s" scale = "0.01 0.01 0.01"/>
             </geometry>
         </collision>
         <inertial>
@@ -134,7 +134,7 @@ def getTemplate(templateName: str) -> str:
     """
     CONTINUOUS = """
     <joint name = "%s" type = "continuous">
-        <origin xyz = "%f %f %f" rpy = "%f %f %f"/>
+        <origin xyz = "%f %f %f" rpy = "0 0 0"/>
         <parent link = "%s"/>
         <child link = "%s"/>
         <axis xyz = "%f %f %f"/>
@@ -142,14 +142,14 @@ def getTemplate(templateName: str) -> str:
     """
     FIXED = """
     <joint name = "%s" type = "fixed">
-        <origin xyz = "%f %f %f" rpy = "%f %f %f"/>
+        <origin xyz = "%f %f %f" rpy = "0 0 0"/>
         <parent link = "%s"/>
         <child link = "%s"/>
     </joint>
     """
     REVOLUTE = """
     <joint name = "%s" type = "revolute">
-        <origin xyz = "%f %f %f" rpy = "%f %f %f"/>
+        <origin xyz = "%f %f %f" rpy = "0 0 0"/>
         <parent link = "%s"/>
         <child link = "%s"/>
         <axis xyz = "%f %f %f"/>
@@ -158,7 +158,7 @@ def getTemplate(templateName: str) -> str:
     """
     PRISMATIC = """
     <joint name = "%s" type = "prismatic">
-        <origin xyz = "%f %f %f" rpy = "%f %f %f"/>
+        <origin xyz = "%f %f %f" rpy = "0 0 0"/>
         <parent link = "%s"/>
         <child link = "%s"/>
         <axis xyz = "%f %f %f"/>
@@ -173,24 +173,25 @@ def fillLinkTemplate(link: adsk.fusion.Occurrence, robotName: str) -> str:
     inertiaSuccess, xx, yy, zz, xy, yz, xz = link.getPhysicalProperties().getXYZMomentsOfInertia()
     if not inertiaSuccess:
         raise ValueError('Failed to calculate moments of inertia')
+    cm_to_m = 0.01
     kgcm2_to_kgm2 = 1e-6
     parsed_name = formatName(link.name)
     mesh_name = 'meshes/' + parsed_name + '.stl'
     linkTemplate = getTemplate('link')
     return linkTemplate % (parsed_name,
-                           link_origin.x,
-                           link_origin.y,
-                           link_origin.z,
+                           link_origin.x * cm_to_m,
+                           link_origin.y * cm_to_m,
+                           link_origin.z * cm_to_m,
                            robotName,
                            mesh_name,
-                           link_origin.x,
-                           link_origin.y,
-                           link_origin.z,
+                           link_origin.x * cm_to_m,
+                           link_origin.y * cm_to_m,
+                           link_origin.z * cm_to_m,
                            robotName,
                            mesh_name,
-                           link_origin.x,
-                           link_origin.y,
-                           link_origin.z,
+                           link_origin.x * cm_to_m,
+                           link_origin.y * cm_to_m,
+                           link_origin.z * cm_to_m,
                            link.getPhysicalProperties().mass,
                            xx * kgcm2_to_kgm2,
                            xy * kgcm2_to_kgm2,
@@ -204,6 +205,9 @@ def fillJointTemplate(joint: adsk.fusion.Joint, jointType: int, asBuilt: bool) -
     jointDict = {0: 'fixed', 1: 'revolute', 2: 'prismatic', 3: 'continuous'}
     jointTypeStr = jointDict[jointType]
     jointTemplate = getTemplate(jointTypeStr)
+    childLink = formatName(joint.occurrenceOne.name)
+    parentLink = formatName(joint.occurrenceTwo.name)
+    cm_to_m = 0.01
     if asBuilt:
         joint_origin = joint.geometry
     else:
@@ -211,39 +215,30 @@ def fillJointTemplate(joint: adsk.fusion.Joint, jointType: int, asBuilt: bool) -
     if jointTypeStr == 'continuous':
         joint_axis = joint.jointMotion.rotationAxisVector
         return jointTemplate % (joint.name,
-                                joint_origin.origin.x,
-                                joint_origin.origin.y,
-                                joint_origin.origin.z,
-                                joint_origin.origin.x,
-                                joint_origin.origin.y,
-                                joint_origin.origin.z,
-                                joint.occurrenceOne.name,
-                                joint.occurrenceTwo.name,
+                                joint_origin.origin.x * cm_to_m,
+                                joint_origin.origin.y * cm_to_m,
+                                joint_origin.origin.z * cm_to_m,
+                                parentLink,
+                                childLink,
                                 joint_axis.x,
                                 joint_axis.y,
                                 joint_axis.z)
     elif jointTypeStr == 'fixed':
         return jointTemplate % (joint.name,
-                                joint_origin.origin.x,
-                                joint_origin.origin.y,
-                                joint_origin.origin.z,
-                                joint_origin.origin.x,
-                                joint_origin.origin.y,
-                                joint_origin.origin.z,
-                                joint.occurrenceOne.name,
-                                joint.occurrenceTwo.name)
+                                joint_origin.origin.x * cm_to_m,
+                                joint_origin.origin.y * cm_to_m,
+                                joint_origin.origin.z * cm_to_m,
+                                parentLink,
+                                childLink)
     elif jointTypeStr == 'revolute':
         joint_axis = joint.jointMotion.rotationAxisVector
         joint_limits = joint.jointMotion.rotationLimits
         return jointTemplate % (joint.name,
-                                joint_origin.origin.x,
-                                joint_origin.origin.y,
-                                joint_origin.origin.z,
-                                joint_origin.origin.x,
-                                joint_origin.origin.y,
-                                joint_origin.origin.z,
-                                joint.occurrenceOne.name,
-                                joint.occurrenceTwo.name,
+                                joint_origin.origin.x * cm_to_m,
+                                joint_origin.origin.y * cm_to_m,
+                                joint_origin.origin.z * cm_to_m,
+                                parentLink,
+                                childLink,
                                 joint_axis.x,
                                 joint_axis.y,
                                 joint_axis.z,
@@ -253,14 +248,11 @@ def fillJointTemplate(joint: adsk.fusion.Joint, jointType: int, asBuilt: bool) -
         joint_axis = joint.jointMotion.slideDirectionVector
         joint_limits = joint.jointMotion.slideLimits
         return jointTemplate % (joint.name,
-                                joint_origin.origin.x,
-                                joint_origin.origin.y,
-                                joint_origin.origin.z,
-                                joint_origin.origin.x,
-                                joint_origin.origin.y,
-                                joint_origin.origin.z,
-                                joint.occurrenceOne.name,
-                                joint.occurrenceTwo.name,
+                                joint_origin.origin.x * cm_to_m,
+                                joint_origin.origin.y * cm_to_m,
+                                joint_origin.origin.z * cm_to_m,
+                                parentLink,
+                                childLink,
                                 joint_axis.x,
                                 joint_axis.y,
                                 joint_axis.z,
