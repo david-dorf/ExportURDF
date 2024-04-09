@@ -1,6 +1,6 @@
-# Unified URDF Converter Library
-
-This is a unified URDF converter library for CAD programs, primarily targeting Fusion360, OnShape, and Solidworks. The library aims to provide a seamless conversion process from CAD models to URDF files, which are commonly used in robotics.
+![exporturdfbanner](https://github.com/daviddorf2023/ExportURDF/assets/113081373/35c860a4-1283-4824-84e4-e0c137349353)
+# ExportURDF
+ExportURDF is a unified URDF converter library for CAD programs, primarily targeting Fusion360, OnShape, and Solidworks. The library aims to provide central, maintainable location for scripts to convert CAD models to URDF files, which are commonly used in robotics and simulation.
 
 ## Supported CAD Programs
 
