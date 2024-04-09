@@ -4,7 +4,7 @@ This is a unified URDF converter library for CAD programs, primarily targeting F
 
 ## Supported CAD Programs
 
-Currently, the library supports Fusion360 and OnShape as the two functional CAD programs. However, work is still in progress to add support for SolidWorks and other CAD programs.
+Currently, the library supports Fusion360 and OnShape is actively in the works. However, work is still fresh to add support for SolidWorks and other CAD programs.
 
 ## Roadmap
 
