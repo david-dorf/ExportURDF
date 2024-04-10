@@ -1,4 +1,4 @@
-# OnShape URDF Exporter
+# OnShape URDF Exporter [WIP]
 
 This package is a tool to export URDF files from OnShape assemblies. It is inspired by the onshape-to-robot library, which is a Python library that allows to export URDF files from OnShape assemblies.
 
