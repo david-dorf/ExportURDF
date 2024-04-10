@@ -10,15 +10,27 @@ class OnShapeURDF:
         self.xmlHeader = """<?xml version = "1.0" ?>\n"""
         self.robotHeader = """<robot name = "%s">\n"""
         self.robotFooter = """\n</robot>"""
+        self.onshapeURL = input(
+            "Enter the URL of the OnShape assembly document: ")
+        self.documentID, self.workspaceID, self.elementID = self.extractID(
+            self.onshapeURL)
+        self.assembly = self.client.get_assembly(
+            self.documentID, self.workspaceID, self.elementID)
+        self.robotName = input("Enter the name of the robot: ")
+        self.robotLinks = self.assembly['rootAssembly']['occurrences']
+        self.robotJoints = self.assembly['rootAssembly']['features'][0]['featureData']['matedEntities']
+        print(self.robotName)
+        print(self.robotLinks)
+        print(self.robotJoints)
+        return
 
     def createURDF(self):
         try:
-            robotName = self.formatName(input("Enter the name of the robot: "))
             folderPath = filedialog.askdirectory()
             try:
-                os.mkdir(os.path.join(folderPath, robotName))
-                os.mkdir(os.path.join(folderPath, robotName, 'urdf'))
-                os.mkdir(os.path.join(folderPath, robotName, 'meshes'))
+                os.mkdir(os.path.join(folderPath, self.robotName))
+                os.mkdir(os.path.join(folderPath, self.robotName, 'urdf'))
+                os.mkdir(os.path.join(folderPath, self.robotName, 'meshes'))
             except:
                 returnValue = input(
                     'Folder already exists. Try to overwrite it? Enter Y or N')
@@ -30,14 +42,20 @@ class OnShapeURDF:
                     print('Invalid input. Exiting...')
                     return
             urdfFile = open(os.path.join(
-                folderPath, robotName, 'urdf', robotName + '.urdf'), 'w')
+                folderPath, self.robotName, 'urdf', self.robotName + '.urdf'), 'w')
             urdfFile.write(self.xmlHeader)
-            urdfFile.write(self.robotHeader % robotName)
+            urdfFile.write(self.robotHeader % self.robotName)
             self.createURDFLinks()
             self.createURDFJoints()
             urdfFile.write(self.robotFooter)
         except:
             print('Failed:\n{}'.format(traceback.format_exc()))
+
+    def extractID(self, url: str) -> str:
+        documentID = url.split('documents/')[1].split('/')[0]
+        workspaceID = url.split('w/')[1].split('/')[0]
+        elementID = url.split('e/')[1]
+        return documentID, workspaceID, elementID
 
     def createURDFLinks(self):
         pass
