@@ -4,7 +4,7 @@ This repository serves as a placeholder for a SolidWorks URDF converter.
 
 ## Purpose
 
-The purpose of this project is to provide a tool that can convert SolidWorks models into URDF (Unified Robot Description Format) files, which are commonly used in robotics simulations and applications. The most recent version of a similar tool is the [\[SolidWorks to URDF Exporter\]](https://github.com/ros/solidworks_urdf_exporter), which isn't maintained anymore (last update was for SolidWorks 2021). For now, that tool is used as a base for SolidWorks URDF functionality and is included in this repository.
+The purpose of this project is to provide a tool that can convert SolidWorks models into URDF (Unified Robot Description Format) files, which are commonly used in robotics simulations and applications. The most recent version of a similar tool is the [\[SolidWorks to URDF Exporter\]](https://github.com/ros/solidworks_urdf_exporter), which isn't maintained anymore (last update was for SolidWorks 2021).
 
 ## Roadmap
 1. Start developing the SolidWorks URDF converter for the latest version of SolidWorks (2024). Possibly extend support for older versions.
