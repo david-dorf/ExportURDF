@@ -21,6 +21,11 @@ Other potential features:
 - SDF tools integration
 - ROS 2 package generator from URDF
 
+## Current TODOs
+1. Tests for roll, pitch, yaw rotation of parts.
+2. Subassembly support.
+3. Rigid groups in Fusion360.
+
 ## Getting Started
 
 To get started with the library, follow these steps:

@@ -107,7 +107,7 @@ def formatName(name: str) -> str:
     if 'base_link' in name:
         return 'base_link'
     else:
-        return name.replace(' ', '_').replace(':', '_').replace('(', '').replace(')', '')
+        return name.translate(str.maketrans(' :()<>', '______'))
 
 
 def getTemplate(templateName: str) -> str:
