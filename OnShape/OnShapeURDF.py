@@ -15,6 +15,8 @@ class OnShapeURDF:
             self.onshapeURL)
         self.assembly = self.client.get_assembly(
             self.documentID, self.workspaceID, self.elementID)
+        self.elements = self.client.list_elements(
+            self.documentID, self.workspaceID, self.elementID)
         os.system('clear')  # Clear the terminal
 
     def createURDF(self):
@@ -23,15 +25,16 @@ class OnShapeURDF:
         robotFooter = """\n</robot>"""
         try:
             robotName, folderPath = self.getRobotDetails()
-            urdfFile = open(os.path.join(
-                folderPath, robotName, 'urdf', robotName + '.urdf'), 'w')
-            urdfFile.write(xmlHeader)
-            urdfFile.write(robotHeader % robotName)
-            partIDs, partNames = self.extractLinks()
+            partStudios = self.getPartStudios()
+            # urdfFile = open(os.path.join(
+            #     folderPath, robotName, 'urdf', robotName + '.urdf'), 'w')
+            # urdfFile.write(xmlHeader)
+            # urdfFile.write(robotHeader % robotName)
+            partNames = self.extractLinks()
             # TODO: Fix the function to export meshes
-            self.exportMeshes(folderPath, robotName, partIDs, partNames)
+            self.exportMeshes(folderPath, robotName, partStudios, partNames)
             joints = self.extractJoints()
-            urdfFile.write(robotFooter)
+            # urdfFile.write(robotFooter)
         except:
             print('Failed:\n{}'.format(traceback.format_exc()))
 
@@ -63,13 +66,17 @@ class OnShapeURDF:
         elementID = url.split('e/')[1]
         return documentID, workspaceID, elementID
 
-    def extractLinks(self) -> list:
-        partIDs = []
-        partNames = []
+    def getPartStudios(self):
+        partStudios = []
+        for element in self.elements:
+            if element["elementType"] == "PARTSTUDIO":
+                partStudios.append(element["id"])
+        return partStudios
 
+    def extractLinks(self) -> list:
+        partNames = []
         for instance in self.assembly["rootAssembly"]["instances"]:
             if instance["type"] == "Part":
-                partIDs.append(instance["partId"])
                 partNames.append(self.formatName(instance["name"]))
             elif instance["type"] == "Assembly":
                 # TODO: Implement sub-assembly support
@@ -77,7 +84,7 @@ class OnShapeURDF:
             else:
                 print("Unknown instance type: " + instance["type"])
 
-        return partIDs, partNames
+        return partNames
 
     def extractJoints(self) -> list:
         joints = []
@@ -103,13 +110,13 @@ class OnShapeURDF:
         rotation_axis = np.dot(rMatrixT, [0, 0, 1])
         return rotation_axis
 
-    def exportMeshes(self, folderPath: str, robotName: str, partIDs: list, partNames: list):
-        for partID in partIDs:
-            print(partID)
+    def exportMeshes(self, folderPath: str, robotName: str, partStudios: list, partNames: list):
+        for partStudio in partStudios:
+            # TODO: get partID from partStudio
             mesh = self.client.part_studio_stl_m(
-                self.documentID, self.workspaceID, self.elementID, partID)
+                self.documentID, self.workspaceID, self.elementID, partStudio)
             with open(os.path.join(folderPath, robotName, 'meshes',
-                                   self.formatName(partNames[partIDs.index(partID)]) + '.stl'), 'wb') as f:
+                                   self.formatName(partNames[partStudios.index(partStudio)]) + '.stl'), 'wb') as f:
                 f.write(mesh)
 
     def formatName(self, name: str) -> str:
