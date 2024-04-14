@@ -22,35 +22,40 @@ class OnShapeURDF:
         robotHeader = """<robot name = "%s">\n"""
         robotFooter = """\n</robot>"""
         try:
-            robotName = input("\nEnter the name of the robot: ")
-            folderPath = filedialog.askdirectory(
-                title='Select the folder to save the URDF files')
-            try:
-                os.mkdir(os.path.join(folderPath, robotName))
-                os.mkdir(os.path.join(folderPath, robotName, 'urdf'))
-                os.mkdir(os.path.join(folderPath,
-                         robotName, 'meshes'))
-            except:
-                returnValue = input(
-                    'Folder already exists. Try to overwrite it? Enter Y or N')
-                if returnValue.upper() == 'Y':
-                    pass
-                elif returnValue.upper() == 'N':
-                    return
-                else:
-                    print('Invalid input. Exiting...')
-                    return
+            robotName, folderPath = self.getRobotDetails()
             urdfFile = open(os.path.join(
                 folderPath, robotName, 'urdf', robotName + '.urdf'), 'w')
             urdfFile.write(xmlHeader)
             urdfFile.write(robotHeader % robotName)
-            links, partNames = self.extractLinks()
+            partIDs, partNames = self.extractLinks()
             # TODO: Fix the function to export meshes
-            # self.exportMeshes(folderPath, robotName, links, partNames)
+            self.exportMeshes(folderPath, robotName, partIDs, partNames)
             joints = self.extractJoints()
             urdfFile.write(robotFooter)
         except:
             print('Failed:\n{}'.format(traceback.format_exc()))
+
+    @staticmethod
+    def getRobotDetails():
+        robotName = input("\nEnter the name of the robot: ")
+        folderPath = filedialog.askdirectory(
+            title='Select the folder to save the URDF files')
+        try:
+            os.mkdir(os.path.join(folderPath, robotName))
+            os.mkdir(os.path.join(folderPath, robotName, 'urdf'))
+            os.mkdir(os.path.join(folderPath,
+                     robotName, 'meshes'))
+        except:
+            returnValue = input(
+                'Folder already exists. Try to overwrite it? Enter Y or N')
+            if returnValue.upper() == 'Y':
+                pass
+            elif returnValue.upper() == 'N':
+                exit()
+            else:
+                print('Invalid input. Exiting...')
+                exit()
+        return robotName, folderPath
 
     def extractID(self, url: str) -> str:
         documentID = url.split('documents/')[1].split('/')[0]
@@ -59,20 +64,12 @@ class OnShapeURDF:
         return documentID, workspaceID, elementID
 
     def extractLinks(self) -> list:
-        links = []
+        partIDs = []
         partNames = []
-
-        for occurrence in self.assembly["rootAssembly"]["occurrences"]:
-            originVector = np.array(
-                [occurrence["transform"][i] for i in [3, 7, 11]])
-            link = {
-                "id": occurrence["path"][0],
-                "origin": originVector,
-            }
-            links.append(link)
 
         for instance in self.assembly["rootAssembly"]["instances"]:
             if instance["type"] == "Part":
+                partIDs.append(instance["partId"])
                 partNames.append(self.formatName(instance["name"]))
             elif instance["type"] == "Assembly":
                 # TODO: Implement sub-assembly support
@@ -80,7 +77,7 @@ class OnShapeURDF:
             else:
                 print("Unknown instance type: " + instance["type"])
 
-        return links, partNames
+        return partIDs, partNames
 
     def extractJoints(self) -> list:
         joints = []
@@ -106,12 +103,13 @@ class OnShapeURDF:
         rotation_axis = np.dot(rMatrixT, [0, 0, 1])
         return rotation_axis
 
-    def exportMeshes(self, folderPath: str, robotName: str, links: list, partNames: list):
-        for link in links:
+    def exportMeshes(self, folderPath: str, robotName: str, partIDs: list, partNames: list):
+        for partID in partIDs:
+            print(partID)
             mesh = self.client.part_studio_stl_m(
-                self.documentID, self.workspaceID, self.elementID, link["id"])
+                self.documentID, self.workspaceID, self.elementID, partID)
             with open(os.path.join(folderPath, robotName, 'meshes',
-                                   self.formatName(partNames[links.index(link)]) + '.stl'), 'wb') as f:
+                                   self.formatName(partNames[partIDs.index(partID)]) + '.stl'), 'wb') as f:
                 f.write(mesh)
 
     def formatName(self, name: str) -> str:
