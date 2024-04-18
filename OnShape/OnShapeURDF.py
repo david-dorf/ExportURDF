@@ -101,7 +101,8 @@ class OnShapeURDF:
         rotation_axis = np.dot(rMatrixT, [0, 0, 1])
         return rotation_axis
 
-    def exportMeshes(self, partStudioElementIDs: list, folderPath: str, robotName: str, partName: str):
+    def exportMeshes(self, partStudioElementIDs: list,
+                     folderPath: str, robotName: str, partName: str):
         for partStudioElementID in partStudioElementIDs:
             stl_binary_data = self.client.part_studio_stl(
                 self.documentID, self.workspaceID, partStudioElementID).content
@@ -114,10 +115,17 @@ class OnShapeURDF:
         else:
             return name.translate(str.maketrans(' :()<>', '______'))
 
-    def fillTemplate(self):
-        # self.getTemplate()
-        # TODO: Implement the function to fill the URDF template using the extracted data
-        pass
+    def fillLinkTemplate(self, linkName: str, origin: np.array,
+                         meshPath: str, mass: float, inertia: np.array) -> str:
+        return self.getTemplate('link') % (linkName, origin[0], origin[1], origin[2], meshPath,
+                                           mass, inertia[0], inertia[1], inertia[2], inertia[3],
+                                           inertia[4], inertia[5], inertia[6])
+
+    def fillJointTemplate(self, jointName: str, jointType: str, origin: np.array,
+                          parentLink: str, childLink: str, axis: np.array, limits: np.array) -> str:
+        return self.getTemplate(jointType) % (jointName, origin[0], origin[1], origin[2],
+                                              parentLink, childLink, axis[0], axis[1], axis[2],
+                                              limits[0], limits[1])
 
     def getTemplate(templateName: str) -> str:
         LINK = """
