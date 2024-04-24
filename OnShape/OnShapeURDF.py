@@ -28,8 +28,8 @@ class OnShapeURDF:
                 folderPath, robotName, 'urdf', robotName + '.urdf'), 'w')
             urdfFile.write(xmlHeader)
             urdfFile.write(robotHeader % robotName)
-            partNameList = self.extractLinks(folderPath, robotName)
-            joints = self.extractJoints(partNameList)
+            linkData = self.extractLinks(folderPath, robotName)
+            jointData = self.extractJoints()
             urdfFile.write(robotFooter)
         except:
             print('Failed:\n{}'.format(traceback.format_exc()))
@@ -65,7 +65,7 @@ class OnShapeURDF:
         return documentID, workspaceID, elementID
 
     def extractLinks(self, folderPath: str, robotName: str) -> list[str]:
-        """Extract the links from the assembly and save the meshes as STL files."""
+        """Extract the link information from the assembly and save the meshes as STL files."""
         partNameList = []
         for instance in self.assembly["rootAssembly"]["instances"]:
             if instance["type"] == "Part":
@@ -83,8 +83,8 @@ class OnShapeURDF:
                 print("Unknown instance type: " + instance["type"])
         return partNameList
 
-    def extractJoints(self, partNameList: list[str]) -> list[dict]:
-        """Extract the joints from the assembly."""
+    def extractJoints(self) -> list[dict]:
+        """Extract the joint information from the assembly."""
         joints = []
         for feature in self.assembly["rootAssembly"]["features"]:
             if feature["featureType"] == "mate":
