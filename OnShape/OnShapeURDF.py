@@ -18,6 +18,7 @@ class OnShapeURDF:
         os.system('clear')  # Clear the terminal
 
     def createURDF(self):
+        """Create the URDF file for the robot."""
         xmlHeader = """<?xml version = "1.0" ?>\n"""
         robotHeader = """<robot name = "%s">\n"""
         robotFooter = """\n</robot>"""
@@ -35,6 +36,7 @@ class OnShapeURDF:
 
     @staticmethod
     def getFolder():
+        """Get the folder path to save the URDF and mesh files."""
         robotName = input("\nEnter the name of the robot: ")
         folderPath = filedialog.askdirectory(
             title='Select the folder to save the URDF files')
@@ -56,12 +58,14 @@ class OnShapeURDF:
         return robotName, folderPath
 
     def extractID(self, url: str) -> str:
+        """Extract the documentID, workspaceID, and elementID from the URL."""
         documentID = url.split('documents/')[1].split('/')[0]
         workspaceID = url.split('w/')[1].split('/')[0]
         elementID = url.split('e/')[1]
         return documentID, workspaceID, elementID
 
-    def extractLinks(self, folderPath, robotName) -> list[str]:
+    def extractLinks(self, folderPath: str, robotName: str) -> list[str]:
+        """Extract the links from the assembly and save the meshes as STL files."""
         partNameList = []
         for instance in self.assembly["rootAssembly"]["instances"]:
             if instance["type"] == "Part":
@@ -80,6 +84,7 @@ class OnShapeURDF:
         return partNameList
 
     def extractJoints(self, partNameList: list[str]) -> list[dict]:
+        """Extract the joints from the assembly."""
         joints = []
         for feature in self.assembly["rootAssembly"]["features"]:
             if feature["featureType"] == "mate":
@@ -96,21 +101,15 @@ class OnShapeURDF:
         return joints
 
     def getRotationAxis(self, matedCS: dict) -> np.array:
+        """Get the rotation axis of the joint."""
         rMatrix = np.array(
             [matedCS["xAxis"], matedCS["yAxis"], matedCS["zAxis"]])
         rMatrixT = rMatrix.T
         rotation_axis = np.dot(rMatrixT, [0, 0, 1])
         return rotation_axis
 
-    def exportMeshes(self, partStudioElementIDs: list,
-                     folderPath: str, robotName: str, partName: str):
-        for partStudioElementID in partStudioElementIDs:
-            stl_binary_data = self.client.part_studio_stl(
-                self.documentID, self.workspaceID, partStudioElementID).content
-        with open(os.path.join(folderPath, robotName, 'meshes', partName + '.stl'), 'wb') as f:
-            f.write(stl_binary_data)
-
     def formatName(self, name: str) -> str:
+        """Format the name of the link or joint."""
         if 'base_link' in name:
             return 'base_link'
         else:
@@ -118,17 +117,20 @@ class OnShapeURDF:
 
     def fillLinkTemplate(self, linkName: str, origin: np.array,
                          meshPath: str, mass: float, inertia: np.array) -> str:
+        """Fill the link template with the given values."""
         return self.getTemplate('link') % (linkName, origin[0], origin[1], origin[2], meshPath,
                                            mass, inertia[0], inertia[1], inertia[2], inertia[3],
                                            inertia[4], inertia[5], inertia[6])
 
     def fillJointTemplate(self, jointName: str, jointType: str, origin: np.array,
                           parentLink: str, childLink: str, axis: np.array, limits: np.array) -> str:
+        """Fill the joint template with the given values."""
         return self.getTemplate(jointType) % (jointName, origin[0], origin[1], origin[2],
                                               parentLink, childLink, axis[0], axis[1], axis[2],
                                               limits[0], limits[1])
 
     def getTemplate(templateName: str) -> str:
+        """Get the URDF XML template based on the joint or link name."""
         LINK = """
         <link name = "%s">
             <visual>
