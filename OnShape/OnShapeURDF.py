@@ -22,21 +22,19 @@ class OnShapeURDF:
         robotHeader = """<robot name = "%s">\n"""
         robotFooter = """\n</robot>"""
         try:
-            robotName, folderPath = self.getRobotDetails()
-            # urdfFile = open(os.path.join(
-            #     folderPath, robotName, 'urdf', robotName + '.urdf'), 'w')
-            # urdfFile.write(xmlHeader)
-            # urdfFile.write(robotHeader % robotName)
-            partNames, partStudioElementIDs = self.extractLinks()
-            self.exportMeshes(partStudioElementIDs,
-                              folderPath, robotName, partNames[0])
-            joints = self.extractJoints()
-            # urdfFile.write(robotFooter)
+            robotName, folderPath = self.getFolder()
+            urdfFile = open(os.path.join(
+                folderPath, robotName, 'urdf', robotName + '.urdf'), 'w')
+            urdfFile.write(xmlHeader)
+            urdfFile.write(robotHeader % robotName)
+            partNameList = self.extractLinks(folderPath, robotName)
+            joints = self.extractJoints(partNameList)
+            urdfFile.write(robotFooter)
         except:
             print('Failed:\n{}'.format(traceback.format_exc()))
 
     @staticmethod
-    def getRobotDetails():
+    def getFolder():
         robotName = input("\nEnter the name of the robot: ")
         folderPath = filedialog.askdirectory(
             title='Select the folder to save the URDF files')
@@ -63,22 +61,25 @@ class OnShapeURDF:
         elementID = url.split('e/')[1]
         return documentID, workspaceID, elementID
 
-    def extractLinks(self) -> list:
-        partNames = []
-        partStudioElementIds = []
+    def extractLinks(self, folderPath, robotName) -> list[str]:
+        partNameList = []
         for instance in self.assembly["rootAssembly"]["instances"]:
             if instance["type"] == "Part":
-                partNames.append(self.formatName(instance["name"]))
+                partName = self.formatName(instance["name"])
+                partNameList.append(partName)
+                stl = self.client.part_studio_stl_m(self.documentID,
+                                                    instance["documentMicroversion"],
+                                                    instance["elementId"], instance["partId"])
+                with open(os.path.join(folderPath, robotName, 'meshes', partName + '.stl'), 'wb') as f:
+                    f.write(stl)
+
             elif instance["type"] == "Assembly":
-                # TODO: Implement sub-assembly support
                 print("Sub-assembly found, not supported yet")
             else:
                 print("Unknown instance type: " + instance["type"])
-        for part in self.assembly["parts"]:
-            partStudioElementIds.append(part["elementId"])
-        return partNames, partStudioElementIds
+        return partNameList
 
-    def extractJoints(self) -> list:
+    def extractJoints(self, partNameList: list[str]) -> list[dict]:
         joints = []
         for feature in self.assembly["rootAssembly"]["features"]:
             if feature["featureType"] == "mate":
