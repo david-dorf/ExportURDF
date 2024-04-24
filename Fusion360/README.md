@@ -17,7 +17,7 @@ In a Fusion360 environment, you can run the script by following these steps:
 1. Open the Fusion360 application.
 2. Use `Shift + S` to open the Scripts and Add-ins dialog.
 3. Click the green `+` icon to add a new script.
-4. Copy the `Fusion360` folder into the script folder. [TODO: Create a setup program to do this automatically for users]
+4. Copy the `Fusion360` folder into the script folder.
 5. Run the `FusionURDF` script by clicking the `Run` button.
 
 ## Roadmap
@@ -25,6 +25,8 @@ In a Fusion360 environment, you can run the script by following these steps:
 2. Test the script with various Fusion360 models to identify and fix any issues. 
    Edge cases like closed chains may not be handled correctly yet.
 3. Add additional features such as materials, rigid groups, and more joint types.
+4. Add support for subassemblies and nested components.
+5. Ensure suppressed and hidden components are not included in the URDF file.
 
 ## Dependencies
 The script requires the following dependencies:
