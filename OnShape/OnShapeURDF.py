@@ -36,14 +36,14 @@ class OnShapeURDF:
             self.fillLinkTemplate(linkData)
             self.fillJointTemplate(jointData, linkData)
             self.urdfFile.write(robotFooter)
-            print('URDF file created successfully.')
+            print('URDF file created successfully at: {}'.format(
+                os.path.join(self.folderPath, self.robotName, 'urdf', self.robotName + '.urdf')))
         except:
             print('Failed:\n{}'.format(traceback.format_exc()))
 
-    @ staticmethod
-    def getFolder():
+    def getFolder(self):
         """Get the folder path to save the URDF and mesh files."""
-        robotName = input("\nEnter the name of the robot: ")
+        robotName = self.formatName(input("\nEnter the name of the robot: "))
         folderPath = filedialog.askdirectory(
             title='Select the folder to save the URDF files')
         try:
@@ -87,8 +87,16 @@ class OnShapeURDF:
                     self.documentID, instance["documentMicroversion"],
                     instance["elementId"], instance["partId"])
                 os.system('clear')  # Clear the terminal
-                mass = massProperties["bodies"][instance["partId"]]["mass"]
+                mass = massProperties["bodies"][instance["partId"]]["mass"][0]
                 inertia = massProperties["bodies"][instance["partId"]]["inertia"]
+                if mass == 0:
+                    print("Warning: Mass of at least one part is 0. Assign a material \
+                          in OnShape?".format(
+                        partName))
+                if inertia[0] == 0 and inertia[1] == 0 and inertia[2] == 0:
+                    print("Warning: Inertia of at least one part is 0. Assign a material \
+                          in OnShape?".format(
+                        partName))
                 centroid = massProperties["bodies"][instance["partId"]]["centroid"]
                 linkData = {
                     "name": partName,
@@ -157,7 +165,7 @@ class OnShapeURDF:
             linkName = linkData["name"]
             origin = linkData["origin"]
             meshPath = linkData["meshPath"]
-            mass = linkData["mass"][0]
+            mass = linkData["mass"]
             inertia = linkData["inertia"]
             self.urdfFile.write(self.getTemplate('link') % (linkName, origin[0], origin[1],
                                                             origin[2], self.robotName, meshPath,
@@ -190,8 +198,8 @@ class OnShapeURDF:
                 if limit:
                     self.urdfFile.write(self.getTemplate(jointType) %
                                         (jointName, origin[0], origin[1], origin[2], parent, child,
-                                         rotationAxis[0], rotationAxis[1], rotationAxis[2], limit[0],
-                                         limit[1]))
+                                         rotationAxis[0], rotationAxis[1], rotationAxis[2],
+                                         limit[0], limit[1]))
                 else:
                     self.urdfFile.write(self.getTemplate("continuous") % (jointName, origin[0],
                                                                           origin[1], origin[2],
@@ -204,7 +212,8 @@ class OnShapeURDF:
                 self.urdfFile.write(self.getTemplate(jointType) % (jointName, origin[0], origin[1],
                                                                    origin[2], parent, child,
                                                                    rotationAxis[0], rotationAxis[1],
-                                                                   rotationAxis[2], limit[0], limit[1]))
+                                                                   rotationAxis[2], limit[0],
+                                                                   limit[1]))
             else:
                 raise ValueError("Unknown joint type: " + jointType)
 
@@ -215,13 +224,13 @@ class OnShapeURDF:
             <visual>
                 <origin xyz = "%f %f %f" rpy = "0 0 0"/>
                 <geometry>
-                    <mesh filename = "package://%s/%s" scale = "0.01 0.01 0.01"/>
+                    <mesh filename = "package://%s/%s" scale = "0.001 0.001 0.001"/>
                 </geometry>
             </visual>
             <collision>
                 <origin xyz = "%f %f %f" rpy = "0 0 0"/>
                 <geometry>
-                    <mesh filename = "package://%s/%s" scale = "0.01 0.01 0.01"/>
+                    <mesh filename = "package://%s/%s" scale = "0.001 0.001 0.001"/>
                 </geometry>
             </collision>
             <inertial>
