@@ -34,8 +34,9 @@ class OnShapeURDF:
             linkData = self.extractLinks(self.folderPath, self.robotName)
             jointData = self.extractJoints()
             self.fillLinkTemplate(linkData)
-            self.fillJointTemplate(jointData)
+            self.fillJointTemplate(jointData, linkData)
             self.urdfFile.write(robotFooter)
+            print('URDF file created successfully.')
         except:
             print('Failed:\n{}'.format(traceback.format_exc()))
 
@@ -85,11 +86,13 @@ class OnShapeURDF:
                 massProperties = self.client.part_mass_properties(
                     self.documentID, instance["documentMicroversion"],
                     instance["elementId"], instance["partId"])
+                os.system('clear')  # Clear the terminal
                 mass = massProperties["bodies"][instance["partId"]]["mass"]
                 inertia = massProperties["bodies"][instance["partId"]]["inertia"]
                 centroid = massProperties["bodies"][instance["partId"]]["centroid"]
                 linkData = {
                     "name": partName,
+                    "id": instance["id"],
                     "origin": centroid,
                     "meshPath": os.path.join('meshes', partName + '.stl'),
                     "mass": mass,
@@ -120,6 +123,19 @@ class OnShapeURDF:
                 joints.append(joint)
         return joints
 
+    def mapPartNames(self, joints: list[dict], links: list[dict]) -> dict:
+        """Map the parents and children of the joints to their link names."""
+        linkMap = {}
+        for joint in joints:
+            parent = joint["parent"][0]
+            child = joint["child"][0]
+            for link in links:
+                if parent == link["id"]:
+                    linkMap[parent] = link["name"]
+                if child == link["id"]:
+                    linkMap[child] = link["name"]
+        return linkMap
+
     def getRotationAxis(self, matedCS: dict) -> np.array:
         """Get the rotation axis of the joint."""
         rMatrix = np.array(
@@ -133,7 +149,7 @@ class OnShapeURDF:
         if 'base_link' in name:
             return 'base_link'
         else:
-            return name.translate(str.maketrans(' :()<>', '______'))
+            return name.translate(str.maketrans(' :()<>;', '_______'))
 
     def fillLinkTemplate(self, linkDataSet: list[dict]):
         """Fill the link template with the given values."""
@@ -151,15 +167,19 @@ class OnShapeURDF:
                                                             inertia[1], inertia[2], inertia[3],
                                                             inertia[4], inertia[5]))
 
-    def fillJointTemplate(self, jointData: list[dict]):
+    def fillJointTemplate(self, jointData: list[dict], linkData: list[dict]):
         """Fill the joint template with the given values."""
+        partMap = self.mapPartNames(jointData, linkData)
         for joint in jointData:
             jointName = joint["name"]
             jointType = joint["type"].lower()
-            print(jointType)
             origin = joint["origin"]
-            parent = joint["parent"]
-            child = joint["child"]
+            # OnShape gives the parent and child in the opposite order, so we need to swap them
+            parent = partMap[joint["child"][0]]
+            child = partMap[joint["parent"][0]]
+            if child == "base_link":
+                parent, child = child, parent  # Always make base_link the parent
+                print("Base link was assigned as child, was this intentional?")
             rotationAxis = joint["rotationAxis"]
             if jointType == "fastened":
                 self.urdfFile.write(self.getTemplate(jointType) % (jointName, origin[0],
