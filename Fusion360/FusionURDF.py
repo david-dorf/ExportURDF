@@ -20,7 +20,7 @@ def run(context):
         if not rootComp.occurrences:
             ui.messageBox('No components found. Exiting...')
             return
-        if not rootComp.joints or not rootComp.asBuiltJoints:
+        if not rootComp.joints and not rootComp.asBuiltJoints:
             ui.messageBox('No joints found. Exiting...')
             return
         if not any('base_link' in link.name for link in rootComp.occurrences):
