@@ -4,27 +4,7 @@ ExportURDF is a unified URDF converter library for CAD programs, primarily targe
 
 ## Supported CAD Programs
 
-Currently, the library supports Fusion360 and OnShape is actively in the works. However, work is still fresh to add support for SolidWorks and other CAD programs.
-
-## Roadmap
-
-1. Fusion360 support
-2. OnShape support
-3. SolidWorks support
-4. Unit tests
-5. Linting
-6. Tutorials/Docs
-
-Other potential features:
-- Support for other CAD platforms
-- Materials integration
-- SDF tools integration
-- ROS 2 package generator from URDF
-
-## Current TODOs
-1. Tests for roll, pitch, yaw rotation of parts.
-2. Subassembly support.
-3. Rigid groups in Fusion360.
+Currently, this library primarily supports Fusion360 and OnShape. Solidworks 2018-2021 support is provided by https://github.com/ros/solidworks_urdf_exporter
 
 ## Getting Started
 
@@ -35,7 +15,7 @@ To get started with the library, follow these steps:
 
 ## Contributing
 
-Contributions are welcome!
+Contributions are welcome! Up to date Solidworks support and test cases will always be helpful.
 
 ## License
 
