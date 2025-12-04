@@ -81,7 +81,7 @@ class OnShapeURDF:
                                                     instance["documentMicroversion"],
                                                     instance["elementId"], instance["partId"])
                 with open(os.path.join(folderPath, robotName,
-                                       'meshes', partName + '.stl'), 'wb') as f:
+                                       'meshes', partName.lower() + '.stl'), 'wb') as f:
                     f.write(stl)
                 massProperties = self.client.part_mass_properties(
                     self.documentID, instance["documentMicroversion"],
@@ -102,7 +102,7 @@ class OnShapeURDF:
                     "name": partName,
                     "id": instance["id"],
                     "origin": centroid,
-                    "meshPath": os.path.join('meshes', partName + '.stl'),
+                    "meshPath": os.path.join('meshes', partName.lower() + '.stl'),
                     "mass": mass,
                     "inertia": inertia
                 }
