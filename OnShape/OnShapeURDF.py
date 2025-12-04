@@ -18,6 +18,7 @@ class OnShapeURDF:
         self.urdfFile = None
         self.robotName = None
         self.folderPath = None
+        self.robotScale = None
         os.system('clear')  # Clear the terminal
 
     def createURDF(self):
@@ -27,6 +28,7 @@ class OnShapeURDF:
         robotFooter = """\n</robot>"""
         try:
             self.robotName, self.folderPath = self.getFolder()
+            self.robotScale = self.getScale()
             self.urdfFile = open(os.path.join(
                 self.folderPath, self.robotName, 'urdf', self.robotName + '.urdf'), 'w')
             self.urdfFile.write(xmlHeader)
@@ -62,6 +64,17 @@ class OnShapeURDF:
                 print('Invalid input. Exiting...')
                 exit()
         return robotName, folderPath
+
+    def getScale(self):
+        """Get the scale of the robot from the user"""
+        scale = input("\nEnter your desired scale for the urdf and meshes (default is .001): ")
+        try:
+            s = float(scale)
+            robotScale = f"{s} {s} {s}"
+        except:
+            print("Invalid scale input. Must be a number. Using default")
+            robotScale = f"{0.001} {0.001} {0.001}"
+        return robotScale
 
     def extractID(self, url: str) -> str:
         """Extract the documentID, workspaceID, and elementID from the URL."""
@@ -168,9 +181,9 @@ class OnShapeURDF:
             mass = linkData["mass"]
             inertia = linkData["inertia"]
             self.urdfFile.write(self.getTemplate('link') % (linkName, origin[0], origin[1],
-                                                            origin[2], self.robotName, meshPath,
+                                                            origin[2], self.robotName, meshPath, self.robotScale,
                                                             origin[0], origin[1], origin[2],
-                                                            self.robotName, meshPath, origin[0],
+                                                            self.robotName, meshPath, self.robotScale, origin[0],
                                                             origin[1], origin[2], mass, inertia[0],
                                                             inertia[1], inertia[2], inertia[3],
                                                             inertia[4], inertia[5]))
@@ -224,13 +237,13 @@ class OnShapeURDF:
             <visual>
                 <origin xyz = "%f %f %f" rpy = "0 0 0"/>
                 <geometry>
-                    <mesh filename = "package://%s/%s" scale = "0.001 0.001 0.001"/>
+                    <mesh filename = "package://%s/%s" scale = "%s"/>
                 </geometry>
             </visual>
             <collision>
                 <origin xyz = "%f %f %f" rpy = "0 0 0"/>
                 <geometry>
-                    <mesh filename = "package://%s/%s" scale = "0.001 0.001 0.001"/>
+                    <mesh filename = "package://%s/%s" scale = "%s"/>
                 </geometry>
             </collision>
             <inertial>
