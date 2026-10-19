@@ -26,8 +26,8 @@ Joint limits are measured from the pose the design is in when you export. Any sk
 In a Fusion360 environment, you can run the script by following these steps:
 1. Open the Fusion360 application.
 2. Use `Shift + S` to open the Scripts and Add-ins dialog.
-3. Click the green `+` icon to open the Fusion360 script folder.
-4. Copy the `Fusion360` folder from inside this repository into the Fusion360 script folder.
+3. Click the `+` icon and select `Script or add-in from device`.
+4. Download this repository and select the `Fusion360` folder from inside it as the script.
 5. Run the `FusionURDF` script by clicking the `Run` button.
 
 ## Roadmap
