@@ -8,10 +8,7 @@ Currently, this library primarily supports Fusion360 and OnShape. Solidworks 201
 
 ## Getting Started
 
-To get started with the library, follow these steps:
-
-1. Clone the repository: `git clone https://github.com/daviddorf2023/ExportURDF.git`
-2. Follow the instructions in the respective directories for Fusion360 and OnShape to install the required dependencies and run the converter scripts.
+Follow the steps in the respective directories for Fusion360 and OnShape.
 
 ## Contributing
 
