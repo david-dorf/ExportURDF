@@ -78,8 +78,9 @@ class FusionURDF:
             baseLink = self.findBaseLink(links)
             if baseLink is None:
                 self.ui.messageBox(
-                    "No component named base_link and no grounded component found. "
-                    "Please name or ground the base component. Exiting..."
+                    "No component named base_link and no visible grounded component "
+                    "found. Please name or ground the base component. Exiting...\n\n"
+                    + self.componentSummary()
                 )
                 return
 
@@ -186,13 +187,37 @@ class FusionURDF:
         for link in links:
             if link.name == "base_link":
                 return link
-        for link in links:
-            if any(occ.isGrounded for occ in link.occurrences):
+        linkOf = {occ.name: link for link in links for occ in link.occurrences}
+        # Prefer a grounded top-level component, then one grounded inside a
+        # subassembly, which grounds the subassembly's link.
+        grounded = [occ for occ in self.rootComp.occurrences if self.isGrounded(occ)]
+        grounded += [occ for occ in self.rootComp.allOccurrences if self.isGrounded(occ)]
+        for occ in grounded:
+            link = linkOf.get(self.topLevelName(occ))
+            if link is not None:
                 self.warnings.append(
-                    f"No component named base_link; using grounded link {link.name}."
+                    f"No component named base_link; using link {link.name}, which "
+                    f"contains grounded component {occ.name}."
                 )
                 return link
         return None
+
+    @staticmethod
+    def isGrounded(occ) -> bool:
+        # Newer Fusion versions ground with "Ground to Parent", a separate flag.
+        return bool(
+            getattr(occ, "isGrounded", False) or getattr(occ, "isGroundToParent", False)
+        )
+
+    def componentSummary(self) -> str:
+        """What the exporter saw, to help find out why no base was chosen."""
+        lines = ["Top-level components:"]
+        for occ in self.rootComp.occurrences:
+            state = "grounded" if self.isGrounded(occ) else "not grounded"
+            if not occ.isLightBulbOn:
+                state += ", hidden (skipped)"
+            lines.append(f"- {occ.name}: {state}")
+        return "\n".join(lines)
 
     def linkXml(self, link: Link, robotPath: str) -> str:
         fx, fy, fz = link.frame
