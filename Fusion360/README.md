@@ -2,18 +2,26 @@
 
 This repository contains a Fusion360 URDF converter script that converts Fusion360 models into URDF files. The script is written in Python and uses the Fusion360 API to extract the necessary information from the CAD model and generate the URDF files.
 
-Trees (ie. multiple child components of the same parent) are not currently supported. The code also needs to be factored alongside this as it's quite messy currently.
-
 ## Getting Started
-Before using the script, make sure your Fusion360 design is set up correctly. The script requires the following:
-1. Each link should be a component in the Fusion360 design.
-2. At least one link should be designated as the base link. The base link should only have a fixed joint connected to it. It should also be pinned and grounded to the parent assembly.
-3. The joints should be created using the Fusion360 joint tool. The script currently supports the following joint types:
-   - Revolute
-   - Fixed
-   - Slider
-   - The above, but with limits and as-built joints
-4. When making a joint, the parent link should be selected first, followed by the child link.
+Before using the script, make sure your Fusion360 design is set up correctly:
+1. Each link should be a top-level component (occurrence) in the design. Subassemblies are exported as a single link.
+2. Name the base component `base_link`. If none are named that, the grounded component is used as the base.
+3. Connect the components with Fusion360 joints or as-built joints. The joints may form a tree (several children per parent). Selection order does not matter: each joint is oriented away from `base_link` automatically.
+4. To export several components as one link, put them in a **rigid group**. Their meshes appear as separate visuals in the same link, and their mass properties are combined.
+5. Hidden components, suppressed joints and suppressed rigid groups are left out.
+
+Supported joint types:
+
+| Fusion360 joint | URDF |
+| --- | --- |
+| Rigid | `fixed` |
+| Revolute | `revolute` if it has limits, otherwise `continuous` |
+| Slider | `prismatic` (+/-1 m if it has no limits) |
+| Cylindrical, Pin-slot | `prismatic` + `revolute`/`continuous` through a massless helper link |
+| Planar | `planar` |
+| Ball | `fixed`, with a warning |
+
+Joint limits are measured from the pose the design is in when you export. Any skipped joints, loops or disconnected components are listed in a warning when the export finishes. The design is not modified.
 
 In a Fusion360 environment, you can run the script by following these steps:
 1. Open the Fusion360 application.
@@ -24,11 +32,10 @@ In a Fusion360 environment, you can run the script by following these steps:
 
 ## Roadmap
 1. Write unit tests for the script to ensure code quality and maintainability.
-2. Test the script with various Fusion360 models to identify and fix any issues. 
-   Edge cases like closed chains may not be handled correctly yet.
-3. Add additional features such as materials, rigid groups, and more joint types.
-4. Add support for subassemblies and nested components.
-5. Ensure suppressed and hidden components are not included in the URDF file.
+2. Test the script with various Fusion360 models to identify and fix any issues.
+   Closed kinematic chains cannot be represented in URDF; the joint that closes a loop is skipped.
+3. Export Fusion360 physical materials, and joint effort/velocity limits (currently fixed defaults).
+4. Export joints inside subassemblies as separate links.
 
 ## Dependencies
 The script requires the following dependencies:

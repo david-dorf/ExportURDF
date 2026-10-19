@@ -1,354 +1,625 @@
+"""Export a Fusion 360 assembly to URDF."""
+
+import math
+import os
+import re
+import traceback
+from collections import deque
+from xml.sax.saxutils import quoteattr
+
 import adsk.core
 import adsk.fusion
-import adsk.cam
-import traceback
-import os
+
+# Fusion API internal units are cm, kg and radians.
+CM_TO_M = 0.01
+KGCM2_TO_KGM2 = 1e-4
+# Fusion writes STL files in millimetres.
+MESH_SCALE = 0.001
+MESH_URI = "../meshes/{}"
+
+# URDF requires effort and velocity on every limited joint; Fusion has neither.
+DEFAULT_EFFORT = 100.0
+DEFAULT_VELOCITY = 1.0
+# Used when a slider has no limit set on one side (metres).
+DEFAULT_SLIDE_LIMIT = 1.0
+# Used when a revolute joint has a limit set on one side only (radians).
+DEFAULT_ROTATION_LIMIT = math.pi
+# Mass and inertia given to links that have no bodies, so simulators accept them.
+MIN_MASS = 1e-6
+MIN_INERTIA = 1e-9
+
+JointTypes = adsk.fusion.JointTypes
+
+
+class Link:
+    def __init__(self, name: str, occurrences: list):
+        self.name = name
+        self.occurrences = occurrences
+        # World position of the link frame in cm.
+        self.frame = (0.0, 0.0, 0.0)
+
+
+class Edge:
+    """A Fusion joint between two links."""
+
+    def __init__(self, joint, name: str, child: Link, parent: Link, origin: tuple):
+        self.joint = joint
+        self.name = name
+        # occurrenceOne is the moving side of a Fusion joint, so it is the
+        # natural child. The tree search may still attach it the other way.
+        self.child = child
+        self.parent = parent
+        self.origin = origin
 
 
 class FusionURDF:
     def __init__(self):
         self.ui = None
         self.rootComp = None
-        self.joints = []
-        self.asbuilt_joints = []
-        self.original_link_names = []
-        self.new_link_names = []
-        self.origins = []
-        self.children = []
-        self.old_origin_x = 0.0
-        self.old_origin_y = 0.0
-        self.old_origin_z = 0.0
-    
-    def process_URDF(self):
-        xmlHeader = """<?xml version = "1.0" ?>\n"""
-        robotHeader = """<robot name = "%s">\n"""
-        robotFooter = """\n</robot>"""
+        self.exporter = None
+        self.warnings = []
+        self.usedNames = set()
 
+    def process_URDF(self):
         try:
             app = adsk.core.Application.get()
-            ui = app.userInterface
-            self.ui = ui
+            self.ui = app.userInterface
             design = adsk.fusion.Design.cast(app.activeProduct)
-            exporter = design.exportManager
-            rootComp = design.rootComponent
-            self.rootComp = rootComp
-            if not rootComp.occurrences:
-                self.ui.messageBox('No components found. Exiting...')
+            if not design:
+                self.ui.messageBox("No active Fusion design. Exiting...")
                 return
-            if not rootComp.joints and not rootComp.asBuiltJoints:
-                self.ui.messageBox('No joints found. Exiting...')
+            self.exporter = design.exportManager
+            self.rootComp = design.rootComponent
+
+            links = self.buildLinks()
+            if not links:
+                self.ui.messageBox("No visible components found. Exiting...")
                 return
-            if not any('base_link' in link.name for link in rootComp.occurrences):
+            baseLink = self.findBaseLink(links)
+            if baseLink is None:
                 self.ui.messageBox(
-                    'Component named base_link not found. Please add one. Exiting...')
+                    "No component named base_link and no grounded component found. "
+                    "Please name or ground the base component. Exiting..."
+                )
                 return
-            robotName = self.formatName(rootComp.name)
-            folderOpener = self.ui.createFolderDialog()
-            folderOpener.title = 'Select folder to save URDF'
-            dialogResult = folderOpener.showDialog()
-            if dialogResult != adsk.core.DialogResults.DialogOK:
+
+            edges = self.buildEdges(links, baseLink)
+            if not edges and len(links) > 1:
+                self.ui.messageBox("No joints found. Exiting...")
                 return
-            folderPath = folderOpener.folder
-            try:
-                os.mkdir(os.path.join(folderPath, robotName))
-                os.mkdir(os.path.join(folderPath, robotName, 'urdf'))
-                os.mkdir(os.path.join(folderPath, robotName, 'meshes'))
-            except:
-                returnValue, cancelled = self.ui.inputBox(
-                    'Folder already exists. Do you want to overwrite it? This can lead to unstable \
-                    behavior. Enter Y or N', 'Warning', 'N')
-                if returnValue.upper() == 'Y':
-                    pass
-                elif returnValue.upper() == 'N' or cancelled:
+
+            folderPath = self.chooseFolder()
+            if folderPath is None:
+                return
+            robotName = self.formatName(self.rootComp.name)
+            robotPath = os.path.join(folderPath, robotName)
+            if os.path.exists(robotPath):
+                result = self.ui.messageBox(
+                    f"Folder {robotPath} already exists. Overwrite its contents?",
+                    "Warning",
+                    adsk.core.MessageBoxButtonTypes.YesNoButtonType,
+                    adsk.core.MessageBoxIconTypes.WarningIconType,
+                )
+                if result != adsk.core.DialogResults.DialogYes:
                     return
-                else:
-                    self.ui.messageBox('Invalid input. Exiting...')
-                    return
+            os.makedirs(os.path.join(robotPath, "urdf"), exist_ok=True)
+            os.makedirs(os.path.join(robotPath, "meshes"), exist_ok=True)
 
-            # Write URDF file header
-            urdfFile = open(os.path.join(
-                folderPath, robotName, 'urdf', robotName + '.urdf'), 'w')
-            urdfFile.write(xmlHeader)
-            urdfFile.write(robotHeader % robotName)
+            jointXml, extraLinkXml, treeLinks = self.buildTree(baseLink, edges)
+            for link in links:
+                if link not in treeLinks:
+                    self.warnings.append(
+                        f"Link {link.name} is not connected to base_link by any joint and was "
+                        "left out."
+                    )
 
-            for joint in rootComp.joints:
-                self.joints.append(joint)
+            linkXml = [self.linkXml(link, robotPath) for link in treeLinks]
 
-            for joint in rootComp.asBuiltJoints:
-                self.asbuilt_joints.append(joint)
+            urdfPath = os.path.join(robotPath, "urdf", robotName + ".urdf")
+            with open(urdfPath, "w") as urdfFile:
+                urdfFile.write('<?xml version="1.0"?>\n')
+                urdfFile.write(f"<robot name={quoteattr(robotName)}>\n")
+                urdfFile.write("".join(linkXml + extraLinkXml + jointXml))
+                urdfFile.write("</robot>\n")
 
-            self.getJointOrigins()
-
-            # Write links and export meshes
-            all_occurences = rootComp.occurrences
-            link_list = [occs for occs in all_occurences]
-            for link in link_list:
-                transform = adsk.core.Matrix3D.create()
-                new_comp = all_occurences.addNewComponent(transform)
-
-                if link.component.name == 'base_link':
-                    link.component.name = 'old_component'
-                    new_comp.component.name = 'base_link'
-                else:
-                    new_comp.component.name = 'new_' + self.formatName(link.component.name)
-
-                self.original_link_names.append(self.formatName(link.component.name))
-                self.new_link_names.append(new_comp.component.name)
-
-                bodies = link.bRepBodies
-                for i in range(bodies.count):
-                    body = bodies.item(i)
-                    body.copyToComponent(new_comp)
-
-                urdfFile.write(self.fillLinkTemplate(new_comp))
-                mesh_name = os.path.join('meshes', new_comp.component.name + '.stl')
-                meshPath = os.path.join(folderPath, robotName, mesh_name)
-                stlExportOptions = exporter.createSTLExportOptions(new_comp, meshPath)
-                stlExportOptions.sendToPrintUtility = False
-                stlExportOptions.isBinaryFormat = True
-                stlExportOptions.meshRefinement = adsk.fusion.MeshRefinementSettings.MeshRefinementLow
-                exporter.execute(stlExportOptions)
-
-            # Write joints
-            # 0: Fixed, 1: Revolute, 2: Prismatic, 3: Continuous
-            for joint in rootComp.joints:
-                hasRotationLimits = joint.jointMotion.jointType == 1 and (
-                    joint.jointMotion.rotationLimits.isMinimumValueEnabled or
-                    joint.jointMotion.rotationLimits.isMaximumValueEnabled)
-                if not hasRotationLimits and joint.jointMotion.jointType == 1:
-                    urdfFile.write(self.fillJointTemplate(
-                        joint, 3, False))
-                else:
-                    urdfFile.write(self.fillJointTemplate(
-                        joint, joint.jointMotion.jointType, False))
-
-            for joint in rootComp.asBuiltJoints:
-                hasRotationLimits = joint.jointMotion.jointType == 1 and (
-                    joint.jointMotion.rotationLimits.isMinimumValueEnabled or
-                    joint.jointMotion.rotationLimits.isMaximumValueEnabled)
-                if not hasRotationLimits and joint.jointMotion.jointType == 1:
-                    urdfFile.write(self.fillJointTemplate(
-                        joint, 3, True))
-                else:
-                    urdfFile.write(self.fillJointTemplate(
-                        joint, joint.jointMotion.jointType, True))
-
-            # Write footer
-            urdfFile.write(robotFooter)
-            self.ui.messageBox('Exported URDF to ' + folderPath)
+            message = "Exported URDF to " + urdfPath
+            if self.warnings:
+                message += "\n\nWarnings:\n- " + "\n- ".join(self.warnings)
+            self.ui.messageBox(message)
 
         except:
-            if ui:
-                self.ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+            if self.ui:
+                self.ui.messageBox(f"Failed:\n{traceback.format_exc()}")
+
+    def buildLinks(self) -> list:
+        """Create one link per top-level occurrence, merging rigid groups."""
+        occurrences = {
+            occ.name: occ for occ in self.rootComp.occurrences if occ.isLightBulbOn
+        }
+
+        # Union-find over occurrence names so overlapping rigid groups merge.
+        groupOf = {name: name for name in occurrences}
+
+        def find(name):
+            while groupOf[name] != name:
+                groupOf[name] = groupOf[groupOf[name]]
+                name = groupOf[name]
+            return name
+
+        groupNames = {}
+        for group in self.rootComp.rigidGroups:
+            if group.isSuppressed:
+                continue
+            members = {self.topLevelName(occ) for occ in group.occurrences}
+            members = [name for name in members if name in occurrences]
+            for name in members[1:]:
+                groupOf[find(name)] = find(members[0])
+            if len(members) > 1:
+                groupNames.setdefault(find(members[0]), group.name)
+
+        merged = {}
+        for name in occurrences:
+            merged.setdefault(find(name), []).append(occurrences[name])
+
+        # Rigid group names may have been recorded against a root that was
+        # later merged into another group.
+        rootGroupNames = {}
+        for root, groupName in groupNames.items():
+            rootGroupNames.setdefault(find(root), groupName)
+
+        links = []
+        for root, members in merged.items():
+            if any(self.isBaseOccurrence(occ) for occ in members):
+                name = "base_link"
+            elif len(members) > 1:
+                name = rootGroupNames.get(root, members[0].name)
+            else:
+                name = members[0].name
+            links.append(Link(self.uniqueName(name), members))
+        return links
+
+    @staticmethod
+    def isBaseOccurrence(occ) -> bool:
+        return "base_link" in occ.name or "base_link" in occ.component.name
+
+    def findBaseLink(self, links: list):
+        for link in links:
+            if link.name == "base_link":
+                return link
+        for link in links:
+            if any(occ.isGrounded for occ in link.occurrences):
+                self.warnings.append(
+                    f"No component named base_link; using grounded link {link.name}."
+                )
+                return link
+        return None
+
+    def linkXml(self, link: Link, robotPath: str) -> str:
+        fx, fy, fz = link.frame
+        visualOrigin = self.originXml(-fx, -fy, -fz)
+
+        parts = [f"  <link name={quoteattr(link.name)}>\n"]
+        meshOccurrences = [occ for occ in link.occurrences if self.hasBodies(occ)]
+        for occ in meshOccurrences:
+            baseName = (
+                link.name
+                if len(meshOccurrences) == 1
+                else f"{link.name}_{self.formatName(occ.name)}"
+            )
+            meshName = baseName.lower() + ".stl"
+            if not self.exportMesh(occ, os.path.join(robotPath, "meshes", meshName)):
+                continue
+            geometry = (
+                "      <geometry>\n"
+                '        <mesh filename={} scale="{s} {s} {s}"/>\n'
+                "      </geometry>\n"
+            ).format(quoteattr(MESH_URI.format(meshName)), s=self.num(MESH_SCALE))
+            r, g, b, a = self.occurrenceColor(occ)
+            parts.append(
+                "    <visual>\n"
+                + visualOrigin
+                + geometry
+                + "      <material name={}>\n"
+                '        <color rgba="{} {} {} {}"/>\n'
+                "      </material>\n"
+                "    </visual>\n".format(
+                    quoteattr(baseName.lower() + "_material"),
+                    self.num(r),
+                    self.num(g),
+                    self.num(b),
+                    self.num(a),
+                )
+            )
+            parts.append(
+                "    <collision>\n" + visualOrigin + geometry + "    </collision>\n"
+            )
+
+        mass, com, inertia = self.massProperties(link.occurrences)
+        parts.append(
+            self.inertialXml(mass, [c - f for c, f in zip(com, link.frame)], inertia)
+        )
+        parts.append("  </link>\n")
+        return "".join(parts)
+
+    @staticmethod
+    def hasBodies(occ) -> bool:
+        return occ.bRepBodies.count > 0 or occ.childOccurrences.count > 0
+
+    def exportMesh(self, occ, meshPath: str) -> bool:
+        try:
+            options = self.exporter.createSTLExportOptions(occ, meshPath)
+            options.sendToPrintUtility = False
+            options.isBinaryFormat = True
+            options.meshRefinement = (
+                adsk.fusion.MeshRefinementSettings.MeshRefinementLow
+            )
+            self.exporter.execute(options)
+            return True
+        except:
+            self.warnings.append(f"Could not export a mesh for {occ.name}.")
+            return False
+
+    @staticmethod
+    def massProperties(occurrences: list):
+        """Combined mass (kg), centre of mass (cm, world) and inertia about the
+        centre of mass (kg*cm^2, world axes) as [xx, yy, zz, xy, yz, xz]."""
+        accuracy = adsk.fusion.CalculationAccuracy.HighCalculationAccuracy
+        mass = 0.0
+        moment = [0.0, 0.0, 0.0]
+        # Inertia about the world origin is additive across occurrences.
+        inertia = [0.0] * 6
+        for occ in occurrences:
+            props = occ.getPhysicalProperties(accuracy)
+            if props.mass <= 0:
+                continue
+            mass += props.mass
+            com = props.centerOfMass
+            moment = [
+                moment[0] + props.mass * com.x,
+                moment[1] + props.mass * com.y,
+                moment[2] + props.mass * com.z,
+            ]
+            _, xx, yy, zz, xy, yz, xz = props.getXYZMomentsOfInertia()
+            inertia = [a + b for a, b in zip(inertia, [xx, yy, zz, xy, yz, xz])]
+        if mass <= 0:
+            return 0.0, (0.0, 0.0, 0.0), [0.0] * 6
+        x, y, z = (m / mass for m in moment)
+        # Parallel axis theorem, from the world origin to the centre of mass.
+        shift = [y * y + z * z, x * x + z * z, x * x + y * y, -x * y, -y * z, -x * z]
+        inertia = [i - mass * s for i, s in zip(inertia, shift)]
+        return mass, (x, y, z), inertia
+
+    def inertialXml(self, mass: float, offset, inertia) -> str:
+        if mass <= 0:
+            mass, offset = MIN_MASS, (0.0, 0.0, 0.0)
+            inertia = [MIN_INERTIA, MIN_INERTIA, MIN_INERTIA, 0.0, 0.0, 0.0]
+        else:
+            inertia = [i * KGCM2_TO_KGM2 for i in inertia]
+        xx, yy, zz, xy, yz, xz = inertia
+        return (
+            "    <inertial>\n" + self.originXml(*offset) + '      <mass value="{}"/>\n'
+            '      <inertia ixx="{}" ixy="{}" ixz="{}" iyy="{}" iyz="{}" izz="{}"/>\n'
+            "    </inertial>\n"
+        ).format(
+            self.num(mass),
+            self.num(xx),
+            self.num(xy),
+            self.num(xz),
+            self.num(yy),
+            self.num(yz),
+            self.num(zz),
+        )
+
+    @staticmethod
+    def occurrenceColor(occ) -> tuple:
+        """Best-effort RGBA (0-1) from the first body's appearance."""
+        try:
+            bodies = occ.bRepBodies
+            appearance = bodies.item(0).appearance if bodies.count else None
+            if appearance:
+                for prop in appearance.appearanceProperties:
+                    colorProp = adsk.core.ColorProperty.cast(prop)
+                    if colorProp and colorProp.value:
+                        color = colorProp.value
+                        return (
+                            color.red / 255,
+                            color.green / 255,
+                            color.blue / 255,
+                            color.opacity / 255,
+                        )
+        except:
+            pass
+        return 0.7, 0.7, 0.7, 1.0
+
+    def buildEdges(self, links: list, baseLink: Link) -> list:
+        linkOf = {occ.name: link for link in links for occ in link.occurrences}
+
+        def linkFor(occ):
+            # A joint to the root component itself is a joint to the world,
+            # which the URDF represents with base_link.
+            if occ is None:
+                return baseLink
+            return linkOf.get(self.topLevelName(occ))
+
+        candidates = [(joint, False) for joint in self.rootComp.joints]
+        candidates += [(joint, True) for joint in self.rootComp.asBuiltJoints]
+
+        edges = []
+        for joint, asBuilt in candidates:
+            if joint.isSuppressed:
+                continue
+            child = linkFor(joint.occurrenceOne)
+            parent = linkFor(joint.occurrenceTwo)
+            if child is None or parent is None:
+                self.warnings.append(
+                    f"Joint {joint.name} connects a hidden component and was skipped."
+                )
+                continue
+            if child is parent:
+                self.warnings.append(
+                    f"Joint {joint.name} is inside link {child.name} (rigid group) and was skipped."
+                )
+                continue
+            edges.append(
+                Edge(
+                    joint,
+                    self.uniqueName(joint.name),
+                    child,
+                    parent,
+                    self.jointOrigin(joint, asBuilt),
+                )
+            )
+        return edges
+
+    @staticmethod
+    def jointOrigin(joint, asBuilt: bool) -> tuple:
+        geometry = joint.geometry if asBuilt else joint.geometryOrOriginOne
+        if geometry is None:
+            # Rigid as-built joints have no geometry; the child's origin will do.
+            translation = joint.occurrenceOne.transform2.translation
+            return translation.x, translation.y, translation.z
+        point = getattr(geometry, "origin", None)
+        if point is None:
+            # A JointOrigin wraps its JointGeometry.
+            point = geometry.geometry.origin
+        return point.x, point.y, point.z
+
+    def buildTree(self, baseLink: Link, edges: list):
+        """Breadth-first search from base_link, assigning parent/child roles
+        and link frames. Returns joint XML, XML for helper links, and the
+        links reached, in tree order."""
+        adjacent = {}
+        for edge in edges:
+            adjacent.setdefault(id(edge.child), []).append(edge)
+            adjacent.setdefault(id(edge.parent), []).append(edge)
+
+        jointXml, extraLinkXml = [], []
+        visited = [baseLink]
+        used = set()
+        queue = deque([baseLink])
+        while queue:
+            parent = queue.popleft()
+            for edge in adjacent.get(id(parent), []):
+                if id(edge) in used:
+                    continue
+                used.add(id(edge))
+                reversed_ = edge.child is parent
+                child = edge.parent if reversed_ else edge.child
+                if child in visited:
+                    self.warnings.append(
+                        f"Joint {edge.name} closes a kinematic loop, which URDF cannot represent, "
+                        "and was skipped."
+                    )
+                    continue
+                if (
+                    reversed_
+                    and edge.joint.jointMotion.jointType != JointTypes.RigidJointType
+                ):
+                    self.warnings.append(
+                        f"Joint {edge.name} was selected child-first; its direction was reversed "
+                        "so that it points away from base_link."
+                    )
+                child.frame = edge.origin
+                visited.append(child)
+                queue.append(child)
+                joints, extraLinks = self.jointXml(edge, parent, child, reversed_)
+                jointXml += joints
+                extraLinkXml += extraLinks
+        return jointXml, extraLinkXml, visited
+
+    def jointXml(self, edge: Edge, parent: Link, child: Link, reversed_: bool):
+        """URDF joint elements for one Fusion joint. Joints with two degrees of
+        freedom are split in two through a massless helper link."""
+        motion = edge.joint.jointMotion
+        jointType = motion.jointType
+        origin = [(c - p) for c, p in zip(child.frame, parent.frame)]
+        # Reversing parent and child reverses the direction of motion. Negating
+        # the axis compensates, so the joint value and limits stay the same.
+        sign = -1.0 if reversed_ else 1.0
+
+        if jointType == JointTypes.RigidJointType:
+            return [
+                self.jointElement(edge.name, "fixed", parent.name, child.name, origin)
+            ], []
+
+        if jointType == JointTypes.RevoluteJointType:
+            return [
+                self.rotationElement(
+                    edge.name, motion, parent.name, child.name, origin, sign
+                )
+            ], []
+
+        if jointType == JointTypes.SliderJointType:
+            return [
+                self.slideElement(
+                    edge.name,
+                    motion,
+                    motion.slideDirectionVector,
+                    parent.name,
+                    child.name,
+                    origin,
+                    sign,
+                )
+            ], []
+
+        if jointType in (JointTypes.CylindricalJointType, JointTypes.PinSlotJointType):
+            if jointType == JointTypes.CylindricalJointType:
+                direction = motion.rotationAxisVector
+            else:
+                direction = motion.slideDirectionVector
+            helper = self.uniqueName(edge.name + "_slide")
+            return (
+                [
+                    self.slideElement(
+                        edge.name + "_slide",
+                        motion,
+                        direction,
+                        parent.name,
+                        helper,
+                        origin,
+                        sign,
+                    ),
+                    self.rotationElement(
+                        edge.name, motion, helper, child.name, (0.0, 0.0, 0.0), sign
+                    ),
+                ],
+                [self.helperLinkXml(helper)],
+            )
+
+        if jointType == JointTypes.PlanarJointType:
+            return [
+                self.jointElement(
+                    edge.name,
+                    "planar",
+                    parent.name,
+                    child.name,
+                    origin,
+                    axis=self.direction(motion.normalDirectionVector, 1.0),
+                )
+            ], []
+
+        self.warnings.append(
+            f"Joint {edge.name} is a ball joint, which URDF cannot represent; it was exported "
+            "as fixed."
+        )
+        return [
+            self.jointElement(edge.name, "fixed", parent.name, child.name, origin)
+        ], []
+
+    def rotationElement(self, name, motion, parentName, childName, origin, sign) -> str:
+        axis = self.direction(motion.rotationAxisVector, sign)
+        limits = motion.rotationLimits
+        if not (limits.isMinimumValueEnabled or limits.isMaximumValueEnabled):
+            return self.jointElement(
+                name, "continuous", parentName, childName, origin, axis=axis
+            )
+        limit = self.limitRange(
+            limits, motion.rotationValue, DEFAULT_ROTATION_LIMIT, 1.0
+        )
+        return self.jointElement(
+            name, "revolute", parentName, childName, origin, axis=axis, limit=limit
+        )
+
+    def slideElement(
+        self, name, motion, direction, parentName, childName, origin, sign
+    ) -> str:
+        limits = motion.slideLimits
+        if not (limits.isMinimumValueEnabled or limits.isMaximumValueEnabled):
+            self.warnings.append(
+                f"Joint {name} has no slide limits; using +/-{DEFAULT_SLIDE_LIMIT} m."
+            )
+        limit = self.limitRange(
+            limits, motion.slideValue, DEFAULT_SLIDE_LIMIT / CM_TO_M, CM_TO_M
+        )
+        return self.jointElement(
+            name,
+            "prismatic",
+            parentName,
+            childName,
+            origin,
+            axis=self.direction(direction, sign),
+            limit=limit,
+        )
+
+    @staticmethod
+    def limitRange(limits, current, default, scale) -> tuple:
+        """URDF lower/upper limits. URDF measures from the exported pose, while
+        Fusion measures from the joint's own zero, so subtract the current value."""
+        lower = (
+            limits.minimumValue if limits.isMinimumValueEnabled else current - default
+        )
+        upper = (
+            limits.maximumValue if limits.isMaximumValueEnabled else current + default
+        )
+        return (lower - current) * scale, (upper - current) * scale
+
+    def jointElement(
+        self, name, jointType, parentName, childName, origin, axis=None, limit=None
+    ) -> str:
+        xml = (
+            f'  <joint name={quoteattr(name)} type="{jointType}">\n'
+            + self.originXml(*origin, indent="    ")
+            + f"    <parent link={quoteattr(parentName)}/>\n"
+            + f"    <child link={quoteattr(childName)}/>\n"
+        )
+        if axis is not None:
+            xml += '    <axis xyz="{} {} {}"/>\n'.format(*map(self.num, axis))
+        if limit is not None:
+            xml += f'    <limit lower="{self.num(limit[0])}" upper="{self.num(limit[1])}" effort="{self.num(DEFAULT_EFFORT)}" velocity="{self.num(DEFAULT_VELOCITY)}"/>\n'
+        return xml + "  </joint>\n"
+
+    def helperLinkXml(self, name: str) -> str:
+        return (
+            f"  <link name={quoteattr(name)}>\n"
+            + self.inertialXml(0.0, (0.0, 0.0, 0.0), None)
+            + "  </link>\n"
+        )
+
+    @staticmethod
+    def direction(vector, sign: float) -> tuple:
+        length = math.sqrt(vector.x**2 + vector.y**2 + vector.z**2) or 1.0
+        return tuple(sign * v / length for v in (vector.x, vector.y, vector.z))
+
+    def chooseFolder(self):
+        folderOpener = self.ui.createFolderDialog()
+        folderOpener.title = "Select folder to save URDF"
+        if folderOpener.showDialog() != adsk.core.DialogResults.DialogOK:
+            return None
+        return folderOpener.folder
+
+    @staticmethod
+    def topLevelName(occ) -> str:
+        """Name of the top-level occurrence that contains occ."""
+        return occ.fullPathName.split("+")[0]
+
+    def originXml(self, x, y, z, indent="      ") -> str:
+        """Origin element from a position in cm."""
+        return (
+            indent
+            + f'<origin xyz="{self.num(x * CM_TO_M)} {self.num(y * CM_TO_M)} {self.num(z * CM_TO_M)}" rpy="0 0 0"/>\n'
+        )
+
+    @staticmethod
+    def num(value: float) -> str:
+        value = 0.0 if abs(value) < 1e-12 else value
+        return f"{value:.9g}"
 
     @staticmethod
     def formatName(name: str) -> str:
-        if 'base_link' in name:
-            return 'base_link'
-        else:
-            return name.translate(str.maketrans(' :()<>', '______'))
+        if "base_link" in name:
+            return "base_link"
+        return re.sub(r"[^A-Za-z0-9_]", "_", name)
 
-    @staticmethod
-    def getTemplate(templateName: str) -> str:
-        LINK = """
-        <link name = "%s">
-            <visual>
-                <origin xyz = "%f %f %f" rpy = "0 0 0"/>
-                <geometry>
-                    <mesh filename = "../%s" scale = "0.001 0.001 0.001"/>
-                </geometry>
-            </visual>
-            <collision>
-                <origin xyz = "%f %f %f" rpy = "0 0 0"/>
-                <geometry>
-                    <mesh filename = "../%s" scale = "0.001 0.001 0.001"/>
-                </geometry>
-            </collision>
-            <inertial>
-                <origin xyz = "%f %f %f" rpy = "0 0 0"/>
-                <mass value = "%f"/>
-                <inertia ixx = "%f" ixy = "%f" ixz = "%f" iyy = "%f" iyz = "%f" izz = "%f"/>
-            </inertial>
-        </link>
-        """
-        CONTINUOUS = """
-        <joint name = "%s" type = "continuous">
-            <origin xyz = "%f %f %f" rpy = "0 0 0"/>
-            <parent link = "%s"/>
-            <child link = "%s"/>
-            <axis xyz = "%f %f %f"/>
-        </joint>
-        """
-        FIXED = """
-        <joint name = "%s" type = "fixed">
-            <origin xyz = "%f %f %f" rpy = "0 0 0"/>
-            <parent link = "%s"/>
-            <child link = "%s"/>
-        </joint>
-        """
-        REVOLUTE = """
-        <joint name = "%s" type = "revolute">
-            <origin xyz = "%f %f %f" rpy = "0 0 0"/>
-            <parent link = "%s"/>
-            <child link = "%s"/>
-            <axis xyz = "%f %f %f"/>
-            <limit lower = "%f" upper = "%f"/>
-        </joint>
-        """
-        PRISMATIC = """
-        <joint name = "%s" type = "prismatic">
-            <origin xyz = "%f %f %f" rpy = "0 0 0"/>
-            <parent link = "%s"/>
-            <child link = "%s"/>
-            <axis xyz = "%f %f %f"/>
-            <limit lower = "%f" upper = "%f"/>
-        </joint>
-        """
-        return locals()[templateName.upper()]
+    def uniqueName(self, name: str) -> str:
+        """Formatted name that no other link or joint uses yet."""
+        base = self.formatName(name)
+        candidate, n = base, 1
+        while candidate.lower() in self.usedNames:
+            n += 1
+            candidate = f"{base}_{n}"
+        self.usedNames.add(candidate.lower())
+        return candidate
 
-    def getJointOrigins(self):
-        for joint in self.rootComp.joints:
-            joint_origin = joint.geometryOrOriginOne
-            joint_child = self.formatName(joint.occurrenceOne.component.name)
-            self.children.append(joint_child)
-            self.origins.append([joint_origin.origin.x, 
-                                 joint_origin.origin.y, 
-                                 joint_origin.origin.z])
-            
-        for joint in self.rootComp.asBuiltJoints:
-            joint_origin = joint.geometry
-            joint_child = self.formatName(joint.occurrenceOne.component.name)
-            self.children.append(joint_child)
-            self.origins.append([joint_origin.origin.x,
-                                 joint_origin.origin.y,
-                                 joint_origin.origin.z])
-
-
-    def fillLinkTemplate(self, link: adsk.fusion.Occurrence) -> str:
-        link_origin_x, link_origin_y, link_origin_z = 0, 0, 0
-        new_to_original_links = dict(zip(self.new_link_names, self.original_link_names))
-        link_name_to_origin = dict(zip(self.children, self.origins))
-        if link.component.name != 'base_link':
-            original_link_name = new_to_original_links[self.formatName(link.component.name)]
-            link_origin_x = -(link_name_to_origin[original_link_name][0])
-            link_origin_y = -(link_name_to_origin[original_link_name][1])
-            link_origin_z = -(link_name_to_origin[original_link_name][2])
-
-        _, xx, yy, zz, xy, yz, xz = link.getPhysicalProperties().getXYZMomentsOfInertia()
-        cm_to_m = 0.01
-        kgcm2_to_kgm2 = 1e-6
-        parsed_name = self.formatName(link.component.name)
-        mesh_name = 'meshes/' + parsed_name + '.stl'
-        linkTemplate = self.getTemplate('link')
-        return linkTemplate % (parsed_name,
-                            link_origin_x * cm_to_m,
-                            link_origin_y * cm_to_m,
-                            link_origin_z * cm_to_m,
-                            mesh_name,
-                            link_origin_x * cm_to_m,
-                            link_origin_y * cm_to_m,
-                            link_origin_z * cm_to_m,
-                            mesh_name,
-                            link_origin_x * cm_to_m,
-                            link_origin_y * cm_to_m,
-                            link_origin_z * cm_to_m,
-                            link.getPhysicalProperties().mass,
-                            xx * kgcm2_to_kgm2,
-                            xy * kgcm2_to_kgm2,
-                            xz * kgcm2_to_kgm2,
-                            yy * kgcm2_to_kgm2,
-                            yz * kgcm2_to_kgm2,
-                            zz * kgcm2_to_kgm2,)
-
-
-    def fillJointTemplate(self, joint: adsk.fusion.Joint, jointType: int, asBuilt: bool) -> str:
-        jointDict = {0: 'fixed', 1: 'revolute', 2: 'prismatic', 3: 'continuous'}
-        jointTypeStr = jointDict[jointType]
-        jointTemplate = self.getTemplate(jointTypeStr)
-
-        cm_to_m = 0.01
-
-        original_to_new_links = dict(zip(self.original_link_names, self.new_link_names))
-
-        original_joint_link_one = self.formatName(joint.occurrenceOne.component.name)
-        original_joint_link_two = self.formatName(joint.occurrenceTwo.component.name)
-
-        new_joint_link_one = original_to_new_links[original_joint_link_one]
-        new_joint_link_two = original_to_new_links[original_joint_link_two]
-
-        childLink = self.formatName(new_joint_link_one)
-        if childLink == 'base_link':
-            raise ValueError(
-                'base_link cannot be a child link. Reverse the selection of the joint.')
-        parentLink = self.formatName(new_joint_link_two)
-
-        if asBuilt:
-            joint_origin = joint.geometry
-        else:
-            joint_origin = joint.geometryOrOriginOne
-
-        if self.old_origin_x:
-            new_origin_x = joint_origin.origin.x - self.old_origin_x
-            new_origin_y = joint_origin.origin.y - self.old_origin_y
-            new_origin_z = joint_origin.origin.z - self.old_origin_z
-        else:
-            new_origin_x = joint_origin.origin.x
-            new_origin_y = joint_origin.origin.y
-            new_origin_z = joint_origin.origin.z
-
-        self.old_origin_x += new_origin_x
-        self.old_origin_y += new_origin_y
-        self.old_origin_z += new_origin_z
-        self.origins.append([self.old_origin_x, self.old_origin_y, self.old_origin_z])
-
-        if jointTypeStr == 'continuous':
-            joint_axis = joint.jointMotion.rotationAxisVector
-            return jointTemplate % (joint.name,
-                                    new_origin_x * cm_to_m,
-                                    new_origin_y * cm_to_m,
-                                    new_origin_z * cm_to_m,
-                                    parentLink,
-                                    childLink,
-                                    joint_axis.x,
-                                    joint_axis.y,
-                                    joint_axis.z)
-        elif jointTypeStr == 'fixed':
-            return jointTemplate % (joint.name,
-                                    new_origin_x * cm_to_m,
-                                    new_origin_y * cm_to_m,
-                                    new_origin_z * cm_to_m,
-                                    parentLink,
-                                    childLink)
-        elif jointTypeStr == 'revolute':
-            joint_axis = joint.jointMotion.rotationAxisVector
-            joint_limits = joint.jointMotion.rotationLimits
-            return jointTemplate % (joint.name,
-                                    new_origin_x * cm_to_m,
-                                    new_origin_y * cm_to_m,
-                                    new_origin_z * cm_to_m,
-                                    parentLink,
-                                    childLink,
-                                    joint_axis.x,
-                                    joint_axis.y,
-                                    joint_axis.z,
-                                    joint_limits.minimumValue,
-                                    joint_limits.maximumValue)
-        elif jointTypeStr == 'prismatic':
-            joint_axis = joint.jointMotion.slideDirectionVector
-            joint_limits = joint.jointMotion.slideLimits
-            return jointTemplate % (joint.name,
-                                    new_origin_x * cm_to_m,
-                                    new_origin_y * cm_to_m,
-                                    new_origin_z * cm_to_m,
-                                    parentLink,
-                                    childLink,
-                                    joint_axis.x,
-                                    joint_axis.y,
-                                    joint_axis.z,
-                                    joint_limits.minimumValue,
-                                    joint_limits.maximumValue)
-        else:
-            raise ValueError('Invalid joint type')
 
 def run(context):
     fusion_urdf_loader = FusionURDF()
